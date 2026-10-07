@@ -1,0 +1,81 @@
+body{font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.55;letter-spacing:0;color:#f4eedb}
+button,input,select,textarea{font-family:inherit;font-size:15px;line-height:1.45}
+h1,.stats strong,.profit-ribbon strong,.dots-title{font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.brand p,.header-stat small,.session time,.ticker,.stats label,.stats small,.panel-head h2,.panel-head i,.panel-head>span,.feed-row,.feed-foot,.pipeline>span,.pipeline small,.agent-float>span,.cards small,.tiny-ticker,.route,.router p,.owner-body p,.owner-body b,footer>span,footer>button,.connection{letter-spacing:.02em}
+.brand p,.header-stat small,.session time,.stats label,.panel-head h2,.market-note,.record small,.source-box small,.owner-body p,.route,.router p,.tiny-ticker{font-size:13px}
+.ticker,.feed-row,.feed-foot,.source-box span,.market-item small,.cards small,footer>span,footer>button,.connection{font-size:12px}
+.panel-head h2{font-weight:750}.panel-head>span{font-size:11px}.record{line-height:1.5}.record b{font-size:14px}.record small{line-height:1.45}
+.intelligence-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:7px 0}.intelligence-card.wide{grid-column:span 2}.metric-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:#6a582b55}.metric{min-height:98px;padding:15px;background:#141106}.metric small{display:block;color:#b8aa7e;font-size:11px;font-weight:700}.metric strong{display:block;color:var(--gold);font-size:23px;margin:7px 0;line-height:1.05}.metric span{display:block;color:#bfb79c;font-size:12px}.metric .warn{color:#ffb067;font-size:inherit}.health-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;padding:12px}.health-card{border:1px solid #5f5535;border-left:4px solid #75dba5;padding:13px;background:#111107;min-height:108px}.health-card.rate_limited,.health-card.unavailable{border-left-color:#f0a657}.health-card.needs_credentials{border-left-color:#777}.health-card>div{display:flex;justify-content:space-between;gap:8px}.health-card>div span{text-transform:uppercase;color:#b8aa7e;font-size:11px}.health-card>strong{display:block;font-size:25px;color:var(--gold);margin:7px 0}.health-card>small{display:block;color:#c8c0a6;font-size:12px;line-height:1.35}.source-box.cached{outline:1px dashed #f0a657;outline-offset:-4px}.decision-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;padding:12px}.decision-card{border:1px solid #5f5535;padding:13px;background:#111107;min-height:118px}.decision-card>div{display:flex;justify-content:space-between;gap:12px}.decision-card b{font-size:14px}.decision-card strong{color:var(--mint);white-space:nowrap}.decision-card p{font-size:12px;color:#c8c0a6;line-height:1.4;margin:10px 0}.decision-card small{font-size:12px;color:#a99f80;line-height:1.4}.replay-smart{margin-bottom:10px}.replay-smart.metric-grid{background:transparent;gap:6px}.replay-smart .metric{border:1px solid #5f5535;min-height:82px}
+@media(max-width:850px){body{font-size:14px}.metric-grid,.decision-grid{grid-template-columns:repeat(2,1fr)}.health-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:600px){.intelligence-grid{grid-template-columns:1fr}.intelligence-card.wide{grid-column:auto}.metric-grid,.decision-grid,.health-grid{grid-template-columns:1fr}.metric{min-height:82px}.brand p,.header-stat small,.session time,.stats label,.panel-head h2,.market-note,.record small,.source-box small,.owner-body p,.route,.router p,.tiny-ticker{font-size:11px}}
+.broker-panel{margin:8px 0;padding-bottom:14px}.broker-panel>.metric-grid{padding:14px}.broker-columns{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 14px}.broker-columns>div{border:1px solid #6a582b66;min-width:0}.broker-columns h3{font-size:12px;letter-spacing:1px;color:#e8d581;padding:12px 14px;margin:0;border-bottom:1px solid #6a582b66}.broker-columns .records-list{max-height:300px}@media(max-width:700px){.broker-columns{grid-template-columns:1fr}}
+.autonomy-consensus{margin:0 14px 14px;padding:14px;border:1px solid #62b58f;background:#0c1c13;display:grid;gap:6px}.autonomy-consensus b{color:#a9f3cd;font-size:13px}.autonomy-consensus span{font-size:13px;color:#eee7cf}.autonomy-consensus small{font-size:11px;color:#b8cdbd;word-spacing:6px}
+.agent-float{min-width:190px;max-width:236px;padding:12px 14px}.agent-float>span{font-family:Arial,sans-serif;font-size:11px;line-height:1.35;letter-spacing:0;color:#d7cb9d;margin:7px 0 5px;white-space:normal}.agent-float .agent-state{display:inline-flex;align-items:center;gap:5px;font-family:Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:.08em;color:#99e1b6}.agent-float .agent-state:before{content:'';width:6px;height:6px;border-radius:50%;background:#72dda1;box-shadow:0 0 7px #72dda1}.agent-float.event-warning{border-color:#d28b64;box-shadow:0 0 24px #d06c4144}.agent-float.event-warning .agent-state{color:#ffc09d}.agent-float.event-warning .agent-state:before{background:#ff956d;box-shadow:0 0 7px #ff956d}.agent-float.event-waiting .agent-state{color:#cbbd85}.agent-float.event-waiting .agent-state:before{background:#a79555;box-shadow:none}
+@media(max-width:760px){.agent-float{min-width:150px;max-width:190px;padding:9px 10px}.agent-float>span{font-size:10px}.agent-float .agent-state{font-size:8px}}
+
+/* Keep the sizing and risk cards beside each other, clear of the last fill. */
+.scene-trade-row{position:absolute;left:22%;right:3%;bottom:3%;z-index:2;display:grid;grid-template-columns:1fr 1fr 1.25fr;gap:16px;align-items:center}
+.scene-trade-row .agent-float{position:relative;inset:auto;min-width:0;max-width:none;width:100%;height:100%;box-sizing:border-box;overflow-wrap:anywhere}
+.scene-trade-row .profit-ribbon{position:relative;inset:auto;transform:none;min-width:0;flex-wrap:wrap;gap:6px 10px;padding:10px 14px;overflow-wrap:anywhere}
+@media(max-width:900px){.scene-trade-row{left:12%;gap:12px}.scene-trade-row .profit-ribbon strong{font-size:16px}}
+@media(max-width:600px){.scene-trade-row{left:4%;right:4%;bottom:1%;grid-template-columns:1fr 1fr;gap:12px}.scene-trade-row .profit-ribbon{grid-column:1/-1;justify-content:center}}
+
+/* The characters and plates share one coordinate system at every screen size. */
+.mascot-stage{position:absolute;left:0;right:0;top:8%;height:70%;pointer-events:none;z-index:1}
+.mascot-stage>img{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;opacity:.85;animation:none;transform:none}
+.mascot-stage .mascot-line{inset:0;display:block}
+.mascot-stage .mascot-tile{position:absolute;bottom:27.9%;width:21.5%;aspect-ratio:543/724;translate:-50% 6%;transform-origin:50% 94%;animation:mascot-planted-idle 4s ease-in-out infinite}
+.mascot-stage .blue{left:16%;animation-delay:-.5s}.mascot-stage .green{left:38.2%;animation-delay:-1.5s}.mascot-stage .yellow{left:61.5%;animation-delay:-2.5s}.mascot-stage .pink{left:84.4%;animation-delay:-3.5s}
+.mascot-stage .mascot-tile[data-state=working]{animation:mascot-planted-work 1.8s ease-in-out infinite}
+.mascot-stage .mascot-tile[data-state=warning]{animation:mascot-planted-warning 1.2s ease-in-out infinite}
+.mascot-stage .mascot-tile[data-state=stopped]{animation:none}
+@keyframes mascot-planted-idle{0%,100%{transform:scaleY(1)}50%{transform:scaleY(1.015)}}
+@keyframes mascot-planted-work{0%,100%{transform:scale(1)}50%{transform:scaleX(1.025) scaleY(.975)}}
+@keyframes mascot-planted-warning{0%,100%{transform:scaleX(1)}50%{transform:scaleX(1.035)}}
+@media(max-width:600px){.mascot-stage{top:18%;height:auto;aspect-ratio:3/2}}
+
+
+
+/* Align the complete hand-equipped sprites using their actual foot baselines. */
+.mascot-stage .blue{translate:-50% 13.12%;transform-origin:50% 86.88%}
+.mascot-stage .green{translate:-50% 13.26%;transform-origin:50% 86.74%}
+.mascot-stage .yellow{translate:-50% 13.54%;transform-origin:50% 86.46%}
+.mascot-stage .pink{translate:-50% 14.23%;transform-origin:50% 85.77%}
+
+/* Leave room below the ticker labels for Titan and the lower agent cards. */
+
+/* Keep ticker labels and agent cards in separate rows with real layout space. */
+.scene{height:auto;min-height:0;padding-bottom:16px}
+.scene .mascot-stage{position:relative;top:auto;left:auto;right:auto;height:auto;width:100%;aspect-ratio:3/2}
+.scene .cards{position:relative;top:auto;left:auto;right:auto;margin:-15% 8% 0;gap:3%;z-index:2}
+.scene-agent-footer{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px 16px;padding:20px 16px 24px;position:relative;z-index:2}
+.scene-agent-footer .scene-brand{position:relative;inset:auto;grid-column:1/-1;text-align:center;padding:0 0 12px}
+.scene-agent-footer .agent-float{position:relative;inset:auto;min-width:0;max-width:none;width:100%;height:100%;box-sizing:border-box;overflow-wrap:anywhere}
+.scene-agent-footer .profit-ribbon{position:relative;inset:auto;grid-column:1/-1;justify-self:end;transform:none;flex-wrap:wrap;gap:8px 14px;max-width:100%;box-sizing:border-box}
+@media(max-width:760px){.scene-agent-footer{grid-template-columns:repeat(2,minmax(0,1fr));padding:16px 8px 24px}.scene .cards{margin:-14% 3% 0}.scene-agent-footer .profit-ribbon{justify-self:stretch;justify-content:center}}
+
+/* Motion follows each agent's working status; other states remain still. */
+.mascot-stage .mascot-tile,.mascot-stage .mascot-tile[data-state]{animation:none;transform:none}
+.mascot-stage .mascot-tile[data-busy=true]{animation:mascot-working-spin 2.4s linear infinite;animation-delay:0s}
+@keyframes mascot-working-spin{from{transform:perspective(650px) rotateY(0deg)}to{transform:perspective(650px) rotateY(360deg)}}
+.agent-float{animation:none}
+.agent-float:not(.event-active) .spark,.agent-float:not(.event-active) .mini-bars span,.agent-float:not(.event-active) .meter-lines{animation:none}
+.agent-float.task-active .agent-state:before{width:9px;height:9px;box-sizing:border-box;flex-shrink:0;border:2px solid #72dda144;border-top-color:#baffd7;border-right-color:#72dda1;background:transparent;box-shadow:none;animation:agent-working-spin .9s linear infinite}
+@keyframes agent-working-spin{to{transform:rotate(360deg)}}
+.terminal.sim-paused .agent-state:before{animation-play-state:paused!important}
+@media(prefers-reduced-motion:reduce){.mascot-stage .mascot-tile[data-busy=true],.agent-float.task-active .agent-state:before{animation:none!important}}
+
+/* WebGL supplies volume, lighting and rotation for supported devices. */
+.mascot-stage .mascot-tile.volume-ready,.mascot-stage .mascot-tile.volume-ready[data-state]{background-image:none;animation:none!important;transform:none!important}
+.mascot-tile canvas{display:block;width:100%;height:100%}
+
+/* A last-cycle status never triggers movement between actual requests. */
+.agent-float:not(.task-active) .spark,.agent-float:not(.task-active) .mini-bars span,.agent-float:not(.task-active) .meter-lines{animation:none}
+
+.learning-lab{margin:8px 0}.learning-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:#6a582b55}.learning-metrics strong{font-size:18px}.learning-methods{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:16px}.learning-method{border:1px solid #6a582b66;background:#141106;padding:16px}.learning-method b,.learning-method strong,.learning-method small{display:block}.learning-method strong{color:#a9f3cd;margin:8px 0;font-size:20px}.learning-method small{font-size:12px;color:#c8c0a6;line-height:1.5}.learning-method progress{width:100%;height:8px;margin-bottom:8px;accent-color:#d7bf67}.learning-results{padding:0 16px 16px}.learning-results h3{font-size:12px;letter-spacing:1px;color:#ead793}.learning-results p{font-size:13px;color:#c8c0a6;line-height:1.6}@media(max-width:700px){.learning-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.learning-methods{grid-template-columns:1fr}}
+
+.simulation-panel{margin:8px 0}.sim-controls{display:flex;flex-wrap:wrap;gap:8px;padding:12px 16px}.sim-controls button,.sim-controls a{background:#302811;border:1px solid #b29a4a;color:#f3dda2;padding:10px 12px;font-size:12px;text-decoration:none}.sim-comparison{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:16px}.sim-account{border:1px solid #6a582b;background:#141106;padding:16px}.sim-account h3,.sim-checks h3,.sim-fills h3{font-size:12px;letter-spacing:1px;color:#ead793}.sim-metric{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid #6a582b44;font-size:13px}.sim-metric b{color:#a9f3cd}.sim-checks,.sim-fills{padding:0 16px 16px}.sim-checks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.sim-checks h3{grid-column:1/-1}.sim-checks .record{border:1px solid #6a582b44;padding:12px}.sim-fills p{font-size:13px;color:#c8c0a6}@media(max-width:700px){.sim-comparison{grid-template-columns:1fr}.sim-checks{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.research-room{margin:8px 0}.research-scenario{display:grid;gap:8px;margin:16px;font-size:13px;color:#dacda4}.research-controls{display:flex;gap:16px;flex-wrap:wrap;align-items:center;padding:0 16px}.research-controls label{font-size:12px;color:#d8cba0;margin:0;flex-direction:row;align-items:center}.research-controls button{font-size:12px}.research-controls select{padding:8px;width:auto}.research-usage{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));background:#6a582b55;gap:1px}.research-usage strong{font-size:18px}.research-reports{padding:16px}.research-report{border:1px solid #6a582b;padding:16px;margin:12px 0}.research-report h3{font-size:13px;color:#ead793}.research-report p{font-size:13px;line-height:1.6;color:#e1d7b8}.research-agents{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.research-agent{background:#151106;border:1px solid #6a582b66;padding:12px}.research-agent b{color:#a9f3cd;font-size:13px}.research-agent small{display:block;margin:8px 0;color:#c5bb9a;font-size:12px;line-height:1.5;overflow-wrap:anywhere}@media(max-width:760px){.research-usage{grid-template-columns:repeat(2,minmax(0,1fr))}.research-agents{grid-template-columns:1fr}.research-controls{align-items:start;flex-direction:column}}
+
+.api-setup{width:min(680px,94vw);max-height:90vh;overflow:auto}.api-setup input[type=password]{width:100%;box-sizing:border-box}.api-setup .connection-help,.api-setup .api-connection-status{font-size:13px;line-height:1.6;color:#d6cba8}.api-setup .api-connection-status{padding:12px;border:1px solid #6a582b;color:#a9f3cd}.connection-links{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:16px 0}.api-setup a{color:#ebd87c}.connection-links button,.chatgpt-manual button{padding:10px 12px;background:#302811;border:1px solid #b29a4a;color:#f3dda2;font-size:12px}.chatgpt-manual{border-top:1px solid #6a582b;padding-top:16px;margin-top:20px}.chatgpt-manual h3{font-size:16px;color:#ead793}.chatgpt-manual p{font-size:13px;line-height:1.6}.chatgpt-manual textarea{width:100%;box-sizing:border-box;margin-top:14px;font-size:12px}

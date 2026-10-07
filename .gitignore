@@ -1,0 +1,24 @@
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+backups/
+*.backup.json
+*.sqlite3*
+
+# Private credentials, exports, backups and local hosting configuration
+.openai/
+*.pem
+*.key
+*.p12
+*.pfx
+*.dump
+*.db
+*.db-*
+*.log
+auth.json
+credentials.json
+secrets/
+exports/
+snapshots/

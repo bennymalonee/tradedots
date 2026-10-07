@@ -1,0 +1,13 @@
+{
+  "name": "dots-ledger-vps",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=22"},
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node server/index.mjs",
+    "test:vps": "node --test server/*.test.mjs"
+  },
+  "dependencies": {"pg": "8.16.3"}
+}

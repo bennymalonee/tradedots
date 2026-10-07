@@ -1,0 +1,39 @@
+services:
+  dots:
+    build: .
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      DATABASE_URL: postgresql://dots:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/dots
+      APP_ORIGIN: ${APP_ORIGIN:?Set the HTTPS origin assigned by Coolify}
+      OWNER_PASSWORD_HASH: ${OWNER_PASSWORD_HASH:?Generate an owner password hash}
+      RESEARCH_ENCRYPTION_KEY: ${RESEARCH_ENCRYPTION_KEY:?Generate an encryption key}
+      MONITOR_ENABLED: ${MONITOR_ENABLED:-false}
+      MONITOR_INTERVAL_SECONDS: ${MONITOR_INTERVAL_SECONDS:-60}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_RESEARCH_MODEL: ${OPENAI_RESEARCH_MODEL:-gpt-4.1-mini}
+      ALPACA_API_KEY: ${ALPACA_API_KEY:-}
+      ALPACA_API_SECRET: ${ALPACA_API_SECRET:-}
+      ALPACA_PAPER_BASE_URL: https://paper-api.alpaca.markets/v2
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 1g
+  postgres:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dots
+      POSTGRES_USER: dots
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - dots-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dots -d dots"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 1g
+volumes:
+  dots-data:
