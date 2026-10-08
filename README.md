@@ -6,11 +6,11 @@
   <img src="web/characters.png" alt="The four DotsTrading mascots" width="640">
 </p>
 
-DotsTrading brings market monitoring, six agent roles, experimental strategy learning, and isolated trading simulations into one dashboard. Deploy it through Coolify with Docker Compose and PostgreSQL. AI research runs through your own OpenAI API connection.
+DotsTrading brings market monitoring, six agent roles, experimental strategy learning, and isolated trading simulations into one dashboard. Deploy it through Coolify with Docker Compose and PostgreSQL. AI research runs through your own OpenAI API connection; optional GMGN wallet research uses public Solana trading data.
 
 **Node.js 22+ · PostgreSQL 17 · Docker Compose · MIT License**
 
-[Deploy with Coolify](#deploy-with-coolify) · [Configuration](#configuration) · [Data migration](#data-migration) · [Troubleshooting](#troubleshooting)
+[Deploy with Coolify](#deploy-with-coolify) · [Wallet research](#wallet-research-with-gmgn) · [Configuration](#configuration) · [Data migration](#data-migration) · [Troubleshooting](#troubleshooting)
 
 ## What you can do
 
@@ -19,6 +19,7 @@ DotsTrading brings market monitoring, six agent roles, experimental strategy lea
 | Market monitoring | Collects quotes and tracks source health, stale data, and rate limits. |
 | Six agent roles | ATLAS, ORION, TITAN, NOVA, VEGA, and LUNA cover evidence, research, signals, sizing, and risk. |
 | AI research | Runs six sequential model reviews using shared evidence and recent report history. Requires an OpenAI API key. |
+| Wallet research | Discovers public GMGN smart-money wallets and compares a watchlist with reported PnL and recent Solana trade history. Requires a GMGN API key. |
 | Adaptive research | Scores recorded forecasts against future observations and adjusts experimental strategy weights after enough outcomes. |
 | Isolated simulation | Compares adaptive and fixed-momentum virtual accounts with modeled spreads, fees, and risk limits. |
 | Paper brokerage | Supports authenticated manual proposals through the locked Alpaca Paper endpoint. |
@@ -40,6 +41,7 @@ flowchart LR
     Monitor[Background monitor] --> App
     App --> Sources[Market data sources]
     App -->|Optional AI research| AI[OpenAI API]
+    App -->|Optional wallet research| Wallets[GMGN public data API]
     App -->|Manual paper orders| Broker[Alpaca Paper]
 ```
 
@@ -47,7 +49,7 @@ The dashboard, API, and optional scheduler run in the `dots` service. PostgreSQL
 
 ## Evidence workspace
 
-The sidebar groups all dashboard sections into **Workspace**, **Research**, **Trading**, **Safety**, and **Settings**. It collapses on desktop and opens as a drawer on smaller screens. Memory, readiness, and performance links select their corresponding tabs; risk settings and AI connection links open the setup dialogs. Ledger export and sign-out stay at the bottom of the menu.
+The sidebar groups all dashboard sections into **Workspace**, **Research**, **Trading**, **Safety**, and **Settings**. It collapses on desktop and opens as a drawer on smaller screens. Memory, readiness, and performance links select their corresponding tabs; risk settings, AI connection, and GMGN connection links open the setup dialogs. **Research → Wallet research** opens the wallet watchlist. Ledger export and sign-out stay at the bottom of the menu.
 
 The **Desk Evidence & Readiness** panel has five views:
 
@@ -61,11 +63,33 @@ Each AI review receives up to three role-prioritized archived reviews, simulated
 
 No existing history can be recovered after it has already been discarded. Archive capture begins with available records after this version is installed, and continues on monitoring cycles and completed research rounds. The archive uses PostgreSQL full-text search without embedding API charges. AI calls that include retrieved context still incur normal provider charges.
 
+## Wallet research with GMGN
+
+Use this workspace to discover and evaluate public Solana wallets before considering a strategy. Dots calls the official GMGN data API directly; installing the GMGN CLI is unnecessary. It uses an API key for public smart-money discovery, wallet activity, and PnL. Personal GMGN follow-list synchronization, signed holdings queries, and live copy trading are not included. Dots does not accept or store a GMGN private signing key or wallet seed phrase.
+
+### Create and connect an API key
+
+1. Sign in to Dots and open **Settings → GMGN connection**. Generate the public key for your GMGN application. The browser downloads the matching private signing PEM for you to keep locally; Dots does not upload or save that private key. This authentication key pair is separate from your crypto wallet keys.
+2. Open the provided [GMGN API creation link](https://gmgn.ai/ai/generateapi) and sign in to your own GMGN account. The link supplies the public key. If copying it manually, include the full PEM with its `BEGIN PUBLIC KEY` and `END PUBLIC KEY` lines. See the [official key guide](https://docs.gmgn.ai/index/generate-public-key).
+3. Create your GMGN API key. If GMGN offers permission choices, select data access and leave trading disabled. GMGN supports IPv4 API requests; ensure your VPS has working IPv4 outbound access. Account eligibility and current plan limits are determined by GMGN.
+4. Paste only the API key into the authenticated Dots connection dialog and save it, or set **`GMGN_API_KEY` as a Coolify runtime secret** and redeploy. Never commit a real key. Browser setup encrypts the saved API key using the existing `RESEARCH_ENCRYPTION_KEY`; preserve that master key when updating the app.
+5. Open **Research → Wallet research**, discover public smart-money wallets or add a public Solana address, then select a wallet and request its 7-day or 30-day analysis. Use **Load recent trades** for a separate history sample.
+
+The watchlist holds up to **10 wallets**. Research requests are manual, with at least **10 seconds between provider calls** and a ceiling of **100 calls per UTC day**. Provider limits may be lower; Dots pauses requests during a rate-limit cooldown. Each discovery, connection check, PnL analysis, or recent-trade request uses a provider call; cached views do not. Background market monitoring does not continuously poll the wallet workspace.
+
+Reports compare **7-day and 30-day reported realized PnL** and inspect a bounded recent trade history. A missing value remains unknown. A provider's history may omit earlier trades, transfers, other chains, or activity outside its coverage, so the report is not a complete account audit. A profitable wallet's past results do not establish that copying it would be profitable: followers enter later and may pay different fees or receive different prices.
+
+This connector does not create simulated copy-trade profits. A future paper-copy experiment needs an execution model using the observed signal delay, available liquidity, fees, and adverse slippage before its returns can be compared with the leader's reported results. Dots does not submit wallet trades or broker orders from this workspace.
+
+The provider contract was reviewed against the official MIT-licensed [GMGNAI/gmgn-skills](https://github.com/GMGNAI/gmgn-skills/tree/4575ef539e6a3115fa0481d41285cb79e77970bf). GMGN service access and data use remain subject to its own terms and plans. This repository contains application code and placeholder configuration; no personal watchlists, account data, or real wallet reports are committed.
+
 ## Deploy with Coolify
 
 ### 1. Prepare your environment
 
 You need a Linux VPS with Docker and Coolify, a GitHub source connected to Coolify, and an HTTPS domain for the app. Coolify can assign a domain if your installation supports it.
+
+A VPS with **2 CPU cores and 8 GB RAM** is a reasonable starting point for this app and PostgreSQL; AI inference runs through an external API. Allow additional capacity for Coolify, other services, backups, and image builds. GitHub changes appear on your VPS only after you deploy the new commit.
 
 Clone the repository on a machine with **Node.js 22+ and OpenSSL** to generate the required secrets:
 
@@ -85,6 +109,8 @@ openssl rand -hex 32
 ```
 
 **API-key encryption master key → `RESEARCH_ENCRYPTION_KEY`**
+
+Generate this only for a new installation. If the app already has an encryption master key, keep its existing value when adding GMGN or updating the app.
 
 ```bash
 openssl rand -base64 32
@@ -126,6 +152,8 @@ After verifying the desk, set `MONITOR_ENABLED=true` in Coolify and redeploy. Th
 
 For AI research, add `OPENAI_API_KEY` in Coolify or use **Research Room → API Setup** after signing in. Start with the free workflow preview, then run a manual AI round once fresh quotes are available. The preview uses programmed checks; it does not call an AI model.
 
+For optional wallet research, add `GMGN_API_KEY` in Coolify or use **Settings → GMGN connection**. Follow [Wallet research with GMGN](#wallet-research-with-gmgn) for key creation and call limits. This connection does not require enabling the background monitor.
+
 Scheduled paid AI research stays off until you explicitly enable it in the dashboard. The configurable daily round cap bounds requests, not a fixed dollar amount. Set provider billing limits separately.
 
 ## Configuration
@@ -151,6 +179,7 @@ Docker Compose builds `DATABASE_URL` from the database configuration. You do not
 | `MONITOR_INTERVAL_SECONDS` | `60` | Delay between cycles; values below 60 are clamped |
 | `OPENAI_API_KEY` | Empty | AI research provider credential |
 | `OPENAI_RESEARCH_MODEL` | `gpt-4.1-mini` | Research model; requires access on your API account |
+| `GMGN_API_KEY` | Empty | Official GMGN public wallet research credential; never supply a private signing key |
 | `ALPACA_API_KEY` | Empty | Alpaca Paper and market-data credential |
 | `ALPACA_API_SECRET` | Empty | Matching Alpaca credential secret |
 
@@ -162,7 +191,7 @@ Dots uses a single owner password with salted scrypt verification. Successful lo
 
 Private dashboard and API requests require a session. State-changing requests also require the configured origin. The public `/healthz` endpoint reports service readiness without exposing desk data. Multi-user roles, password recovery, and MFA are not implemented.
 
-API Setup verifies model access and encrypts saved keys with AES-256-GCM. Saved keys are not returned to the browser or included in state-transfer exports. Keep `RESEARCH_ENCRYPTION_KEY` stable: replacing it makes previously saved keys unreadable.
+API Setup verifies model access and encrypts saved AI keys with AES-256-GCM. GMGN connection setup uses the same encryption master key for its saved API key. Saved credentials are not returned to the browser or included in state-transfer exports. Keep `RESEARCH_ENCRYPTION_KEY` stable: replacing it makes previously saved keys unreadable.
 
 Commit application code and placeholder configuration only. Keep passwords, provider keys, certificates, database dumps, exports, and account snapshots outside Git. Ignore rules help prevent accidental inclusion but do not detect every possible secret.
 
@@ -171,7 +200,7 @@ Commit application code and placeholder configuration only. Keep passwords, prov
 Use a **full desk-state snapshot** when moving an existing installation. The dashboard ledger export is useful for analysis but does not contain everything needed to restore an account. To move an existing searchable memory archive as well, restore a complete PostgreSQL backup: state snapshots do not include the separate `agent_memory` table.
 
 1. Pause source monitoring, simulation, scheduled AI research, and external automation before taking the final snapshot.
-2. Export the full state. For a Sites installation, obtain the JSON stored in `desk_state.payload` through its database administration tools. Remove `ai_connection` before transferring it; reconnect the AI key at the destination.
+2. Export the full state. For a Sites installation, obtain the JSON stored in `desk_state.payload` through its database administration tools. Remove saved provider credentials before transferring it; reconnect AI and GMGN keys at the destination.
 3. Deploy the destination with `MONITOR_ENABLED=false`. Keep its database empty and do not open the dashboard yet.
 4. Transfer the snapshot privately into the `dots` container, at a path readable by the app user. In the app terminal, run:
 
@@ -195,7 +224,7 @@ To create a portable state snapshot, run this in the app container:
 node scripts/state-transfer.mjs export /tmp/dots.backup.json
 ```
 
-The exporter excludes saved AI credentials and refuses to overwrite an existing file. Download the snapshot privately, then remove the temporary copy. This supplements full database backups; it does not include the memory archive, session, or login-throttling tables.
+The exporter excludes saved provider credentials and refuses to overwrite an existing file. Download the snapshot privately, then remove the temporary copy. This supplements full database backups; it does not include the memory archive, session, or login-throttling tables.
 
 Before updating the app, take a backup and review the changes. Redeploy the desired commit through Coolify, then check service health and dashboard data.
 
@@ -212,6 +241,10 @@ Before updating the app, take a backup and review the changes. Redeploy the desi
 | Quotes are missing or stale | Check source status, market hours, provider credentials, and any rate-limit retry time. |
 | AI research waits for quotes | Connect market data and wait for a fresh eligible stock or crypto quote. |
 | A saved AI key cannot be opened | Restore the matching encryption master key or reconnect the API key through API Setup. |
+| GMGN is disconnected | Save an API key through GMGN connection setup, or set `GMGN_API_KEY` in Coolify and redeploy. |
+| GMGN returns `401` or `403` | Check the key, account access, and IPv4 outbound connectivity. |
+| GMGN requests are paused | Wait for the displayed cooldown or daily reset. Repeated requests do not clear the provider's limit. |
+| A saved GMGN key cannot be opened | Restore the matching `RESEARCH_ENCRYPTION_KEY` or reconnect the API key; do not generate a replacement master key as a routine fix. |
 | Background monitoring is inactive | Check `MONITOR_ENABLED=true` and redeploy. Only one scheduler instance holds the PostgreSQL lock. |
 
 ## Development

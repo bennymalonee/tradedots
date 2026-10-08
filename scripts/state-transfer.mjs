@@ -8,9 +8,9 @@ try {
   if(action==='export') {
     const {rows:[row]}=await pool.query('SELECT version,payload FROM desk_state WHERE id=1');
     if(!row)throw Error('No desk state exists yet');
-    const state=JSON.parse(row.payload);delete state.ai_connection;
+    const state=JSON.parse(row.payload);delete state.ai_connection;delete state.gmgn_connection;
     await fs.writeFile(file,JSON.stringify({format:'dots-full-state-v1',exported_at:new Date().toISOString(),state},null,2),{mode:0o600,flag:'wx'});
-    console.log('Snapshot exported without saved AI credentials. Store privately.');
+    console.log('Snapshot exported without saved provider credentials. Store privately.');
   } else {
     const input=JSON.parse(await fs.readFile(file,'utf8'));
     const state=safeTransferState(input);

@@ -5,6 +5,8 @@ export function safeTransferState(input) {
   }
   // Credentials must be configured again on the destination, not transferred with memory.
   delete state.ai_connection;
+  delete state.gmgn_connection;
+  if(state.gmgn){state.gmgn.lease=null;state.gmgn.epoch=(state.gmgn.epoch||0)+1;state.gmgn.verified_at=null;}
   state.running=false;state.halted=true;state.halt_reason='Migration: verify accounts and data before resuming';
   state.tick_lease=null;
   if(state.research) {

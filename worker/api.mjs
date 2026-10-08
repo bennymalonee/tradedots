@@ -2,6 +2,7 @@ import {syncMemory,agentTrace,performanceReport,readinessReport} from './insight
 import {learningScorecard} from './knowledge.mjs';
 import {evaluationReport} from './evaluation.mjs';
 import {saveResearchConnection} from './connections.mjs';
+import {gmgnSummary,getWalletResearch,gmgnConnection,gmgnDiscover,gmgnAnalyze,gmgnActivity,gmgnWatch} from './gmgn.mjs';
 import {runResearch,researchControl,researchSummary,evaluateResearch} from "./research.mjs";
 import {updateSimulation,simulationSummary,simulationControl,simulationDiagnostic} from "./simulation.mjs";
 import {updateLearning,learningSummary} from "./learning.mjs";
@@ -180,7 +181,7 @@ export async function getDesk(env){
  risk.health=risk.stale_positions||risk.uncertain_pending?'blocked':broker.status==='unavailable'?'degraded':risk.exposure>risk.exposure_limit?'halted':'healthy';risk.utilization_pct=risk.exposure_limit?risk.exposure/risk.exposure_limit*100:0;
  autonomy.consensus_score=autonomy.gates?Math.round(Object.values(autonomy.gates).filter(Boolean).length/Object.keys(autonomy.gates).length*100):0;autonomy.policy=policy;autonomy.regimes=regimes;
  const agents=deskAgentCards({sources:state.sources,markets,broker,autonomy,risk},now);
- return{insights:{learning:learningScorecard(state,now),validation:state.last_evaluation||null,agents:agentTrace(state,now),performance:performanceReport(state,now),memory:env.MEMORY?await env.MEMORY.stats():{available:false},readiness:state.last_readiness||null},research:researchSummary(state,env),simulation:simulationSummary(state,now),learning:learningSummary(state),mode:'paper',execution_enabled:alpacaReady(env),generated_at:new Date(now).toISOString(),sources:state.sources,markets,broker,autonomy,shadow:shadowSummary(state,now),agents,account:summary,engine:{status:'connected',mode:'paper',running:state.running,halted:state.halted,halt_reason:state.halt_reason,last_tick:state.last_tick,note:alpacaReady(env)?('Monitoring and shadow analysis only; manual Alpaca Paper orders require sign-in.'):'Hosted persistent paper engine. Broker routing is disabled.'},paper:{fill_test:state.last_fill_test||null,config:state.config,risk,analytics,ledger:state.ledger.slice(0,100),decisions:state.decisions.slice(0,50),alerts:state.alerts.slice(0,100),history:state.history.slice(-300),replay:state.last_replay,observations:state.observations.length}};
+ return{wallet_connection:gmgnSummary(state,env),insights:{learning:learningScorecard(state,now),validation:state.last_evaluation||null,agents:agentTrace(state,now),performance:performanceReport(state,now),memory:env.MEMORY?await env.MEMORY.stats():{available:false},readiness:state.last_readiness||null},research:researchSummary(state,env),simulation:simulationSummary(state,now),learning:learningSummary(state),mode:'paper',execution_enabled:alpacaReady(env),generated_at:new Date(now).toISOString(),sources:state.sources,markets,broker,autonomy,shadow:shadowSummary(state,now),agents,account:summary,engine:{status:'connected',mode:'paper',running:state.running,halted:state.halted,halt_reason:state.halt_reason,last_tick:state.last_tick,note:alpacaReady(env)?('Monitoring and shadow analysis only; manual Alpaca Paper orders require sign-in.'):'Hosted persistent paper engine. Broker routing is disabled.'},paper:{fill_test:state.last_fill_test||null,config:state.config,risk,analytics,ledger:state.ledger.slice(0,100),decisions:state.decisions.slice(0,50),alerts:state.alerts.slice(0,100),history:state.history.slice(-300),replay:state.last_replay,observations:state.observations.length}};
 }
 async function jsonBody(request){if(!request.headers.get('content-type')?.includes('application/json'))throw Error('JSON content type required');const body=await request.text();if(body.length>1000000)throw Error('Request too large');const input=JSON.parse(body);if(!input||Array.isArray(input)||typeof input!=='object')throw Error('An object is required');return input}
 function interactiveWriteAllowed(request){const origin=request.headers.get('Origin');return Boolean(request.headers.get('oai-authenticated-user-id'))&&(!origin||origin===new URL(request.url).origin)&&request.headers.get('sec-fetch-site')!=='cross-site'}
@@ -188,6 +189,17 @@ export async function routeApi(request,env){const path=new URL(request.url).path
  const response=(data,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
  if(path==='/api/health')return response({status:'ok',mode:'paper',execution_enabled:alpacaReady(env),paper_endpoint_locked:true,database_configured:!!env.DB});
  try{
+ if(path==='/api/wallets'){
+  if(request.method!=='GET')return response({error:'Method not allowed'},405);
+  return response(await getWalletResearch(env));
+ }
+ if(['/api/wallets/connection','/api/wallets/discover','/api/wallets/analyze','/api/wallets/activity','/api/wallets/watch'].includes(path)){
+  if(request.method!=='POST')return response({error:'Method not allowed'},405);
+  if(!interactiveWriteAllowed(request))return response({error:'Sign in to manage wallet research'},403);
+  const input=await jsonBody(request);
+  const operation={'/api/wallets/connection':gmgnConnection,'/api/wallets/discover':gmgnDiscover,'/api/wallets/analyze':gmgnAnalyze,'/api/wallets/activity':gmgnActivity,'/api/wallets/watch':gmgnWatch}[path];
+  return response(await operation(env,input));
+ }
  if(path==='/api/memory'&&request.method==='GET'){if(!env.MEMORY)return response({error:'Searchable archive unavailable'},503);const u=new URL(request.url);return response({results:await env.MEMORY.search({q:u.searchParams.get('q')||'',agent:u.searchParams.get('agent')||'',kind:u.searchParams.get('kind')||''}),...await env.MEMORY.stats()})}
  if(path==='/api/desk'&&request.method==='GET')return response(await getDesk(env));
  if(path==='/api/export'&&request.method==='GET'){const{state}=await readState(env.DB);return new Response(JSON.stringify({exported_at:new Date().toISOString(),mode:'paper',account:accountSummary(state),ledger:state.ledger,decisions:state.decisions,history:state.history,observations:state.observations,config:state.config,simulation:state.simulation,learning:state.learning,research:state.research,readiness:state.last_readiness,validation:state.last_evaluation},null,2),{headers:{'Content-Type':'application/json','Content-Disposition':'attachment; filename="dots-paper-ledger.json"','Cache-Control':'no-store'}})}
@@ -215,6 +227,9 @@ export async function routeApi(request,env){const path=new URL(request.url).path
  if(path==='/api/replay'){const{state}=await readState(env.DB);let samples=input.samples;if(!samples){if(typeof input.market_id!=='string')throw Error('Select a market for recorded replay');samples=state.observations.filter(x=>x.market_id===input.market_id)}const result=replay(samples,Number(input.initial_cash||1000));const updated=await mutate(env.DB,s=>{s.last_replay={...result,curve:result.curve.slice(-300),trades:result.trades.slice(-100),at:Date.now(),source:input.samples?'uploaded_csv':'recorded_quotes',market_id:input.market_id||null};return s.last_replay});return response(updated.result)}
  }
  return response({error:'Not found'},404);
- }catch(error){return response({error:error.message||'Operation failed'},400)}
+ }catch(error){
+  const message=path.startsWith('/api/wallets')&&error instanceof SyntaxError?'Valid JSON object required':error.message||'Operation failed';
+  return response({error:message},error.gmgn_code==='rate_limited'?429:400);
+ }
 }
 export {autonomousPaperCycle};
