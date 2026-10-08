@@ -10,7 +10,7 @@ DotsTrading brings market monitoring, six agent roles, experimental strategy lea
 
 **Node.js 22+ · PostgreSQL 17 · Docker Compose · MIT License**
 
-[Deploy with Coolify](#deploy-with-coolify) · [Wallet research](#wallet-research-with-gmgn) · [Configuration](#configuration) · [Data migration](#data-migration) · [Troubleshooting](#troubleshooting)
+[Deploy with Coolify](#deploy-with-coolify) · [Agent lab](#agent-lab) · [Wallet research](#wallet-research-with-gmgn) · [Configuration](#configuration) · [Data migration](#data-migration) · [Troubleshooting](#troubleshooting)
 
 ## What you can do
 
@@ -21,13 +21,14 @@ DotsTrading brings market monitoring, six agent roles, experimental strategy lea
 | AI research | Runs six sequential model reviews using shared evidence and recent report history. Requires an OpenAI API key. |
 | Wallet research | Discovers public GMGN smart-money wallets and compares a watchlist with reported PnL and recent Solana trade history. Requires a GMGN API key. |
 | Adaptive research | Scores recorded forecasts against future observations and adjusts experimental strategy weights after enough outcomes. |
+| Agent lab | Scores individual AI forecasts and tests frozen research policies with isolated paper probes and a matched baseline. |
 | Isolated simulation | Compares adaptive and fixed-momentum virtual accounts with modeled spreads, fees, and risk limits. |
 | Paper brokerage | Supports authenticated manual proposals through the locked Alpaca Paper endpoint. |
 | Searchable memory | Archives research, forecast outcomes, trade lessons, and agent decisions in PostgreSQL with full-text and symbol search. |
 | Readiness checks | Reports functional simulation checks, all six agent histories, quote freshness, configuration, and evidence gaps. |
 | Performance comparison | Separates realized and unrealized net results, fees, returns, and sampled drawdown for both virtual accounts. |
 
-**Execution scope:** background monitoring does not submit broker orders. AI reports do not change risk limits or place trades. Simulated fills are separate from the main account and brokerage. Research and simulation results do not establish future profitability.
+**Execution scope:** background monitoring does not submit broker orders. AI reports do not change risk limits or place broker orders. Simulated fills are separate from the main account and brokerage. Research and simulation results do not establish future profitability.
 
 The active desk keeps bounded recent history; the memory archive persists research, scored forecasts, and simulated trade lessons separately. Detailed decision records are retained for 14 days. Hindsight, vector search, and model retraining are not included.
 
@@ -63,6 +64,22 @@ Each AI review receives up to three role-prioritized archived reviews, simulated
 
 No existing history can be recovered after it has already been discarded. Archive capture begins with available records after this version is installed, and continues on monitoring cycles and completed research rounds. The archive uses PostgreSQL full-text search without embedding API charges. AI calls that include retrieved context still incur normal provider charges.
 
+## Agent lab
+
+Open **Research → Agent lab** to inspect the six AI reviewers' individual forecasts, Brier error (lower is better), forecast coverage, and calibration. Results are separated by model and policy version. **SAGE** reviews existing outcome records; **AEGIS** audits paper timing, modeled costs, and the paired benchmark. These two specialists are programmed checks and make no additional AI requests themselves.
+
+Start an experiment in Agent lab, then separately run an AI round in **Research Room** or enable the existing scheduled research. Starting the lab does not start paid AI calls. Each research round still uses six model requests and the existing **1–4 daily round cap**; normal provider charges apply. Only new, successfully completed AI rounds contribute. Programmed previews, failed rounds, and legacy reports are excluded.
+
+The first four reviewers' forecasts begin with equal blend weights. After each has at least **20 scored forward outcomes**, the policy uses gently adjusted Brier weights shrunk toward equal weighting, with no reviewer receiving more than **40% of the full four-role weight snapshot**. Available contributors are normalized for a round. Weights are frozen before each six-call round. This updates an experimental forecast policy; it does not retrain the underlying AI model or enable brokerage execution.
+
+Each eligible report can create an isolated **$60 paper probe**, paired with an equally sized always-long benchmark. A long probe requires a blended probability of at least **0.60**, six completed non-abstaining reviews, and no risk veto. The entry book's source timestamp must be at least **15 seconds after the AI round finishes**, and its recorded collection time must be at or after that timestamp. Entry expires if no valid book appears within **10 minutes**. After a **60-minute hold**, the first later fresh valid book supplies the exit; a missing exit leaves the probe open.
+
+The model uses recorded bid/ask prices, **0.1% fees per side**, and **10 basis points of adverse slippage**. These are simulated trades, not verified broker fills or a portfolio equity curve: independent probes do not share a cash balance. Realized gains and losses appear after one matched pair closes. Fewer than **30 closed pairs** means insufficient evidence; 30 or more is preliminary evidence, not proof of profitability.
+
+An experiment allows at most **100 probes**, with at most **10 pending or open** at once. Pause cancels pending entries and continues checking open-probe exits. Start a new experiment only after open probes close; up to two previous experiment summaries are retained. Forecast storage is bounded to **600 records** while unresolved forecasts remain protected. Migration pauses the experiment, and exports preserve its metadata without provider credentials. No result automatically promotes a policy to trading.
+
+Agent lab evaluates stock and crypto AI research already supported by the desk. The separate GMGN workspace remains read-only Solana wallet research; it is not a copy-trading experiment.
+
 ## Wallet research with GMGN
 
 Use this workspace to discover and evaluate public Solana wallets before considering a strategy. Dots calls the official GMGN data API directly; installing the GMGN CLI is unnecessary. It uses an API key for public smart-money discovery, wallet activity, and PnL. Personal GMGN follow-list synchronization, signed holdings queries, and live copy trading are not included. Dots does not accept or store a GMGN private signing key or wallet seed phrase.
@@ -71,7 +88,7 @@ Use this workspace to discover and evaluate public Solana wallets before conside
 
 1. Sign in to Dots and open **Settings → GMGN connection**. Generate the public key for your GMGN application. The browser downloads the matching private signing PEM for you to keep locally; Dots does not upload or save that private key. This authentication key pair is separate from your crypto wallet keys.
 2. Open the provided [GMGN API creation link](https://gmgn.ai/ai/generateapi) and sign in to your own GMGN account. The link supplies the public key. If copying it manually, include the full PEM with its `BEGIN PUBLIC KEY` and `END PUBLIC KEY` lines. See the [official key guide](https://docs.gmgn.ai/index/generate-public-key).
-3. Create your GMGN API key. If GMGN offers permission choices, select data access and leave trading disabled. GMGN supports IPv4 API requests; ensure your VPS has working IPv4 outbound access. Account eligibility and current plan limits are determined by GMGN.
+3. Create your GMGN API key. GMGN controls eligibility: if its Free plan shows “requires ≥$100 balance”, key creation is blocked until the account meets that requirement. Check GMGN for which wallet and assets count. The message describes a balance requirement, not a Dots charge. GMGN is optional; Agent lab and the rest of Dots work without it. If GMGN offers permission choices, select data access and leave trading disabled. GMGN supports IPv4 API requests; ensure your VPS has working IPv4 outbound access. Account eligibility and current plan limits are determined by GMGN.
 4. Paste only the API key into the authenticated Dots connection dialog and save it, or set **`GMGN_API_KEY` as a Coolify runtime secret** and redeploy. Never commit a real key. Browser setup encrypts the saved API key using the existing `RESEARCH_ENCRYPTION_KEY`; preserve that master key when updating the app.
 5. Open **Research → Wallet research**, discover public smart-money wallets or add a public Solana address, then select a wallet and request its 7-day or 30-day analysis. Use **Load recent trades** for a separate history sample.
 
@@ -210,7 +227,7 @@ Use a **full desk-state snapshot** when moving an existing installation. The das
 
 5. Delete the temporary snapshot. Check balances, positions, agent history, simulation records, and broker reconciliation. Reconnect credentials and explicitly resume the relevant controls before enabling the scheduler.
 
-Import preserves history, pauses the destination desk and simulation, disables scheduled AI research, and clears old task leases. It refuses to overwrite an existing account. Keep the source available until verification is complete, and avoid running two active schedules against the same accounts.
+Import preserves history and experiment metadata, pauses the destination desk, simulation, and Agent lab, disables scheduled AI research, and clears old task leases. It refuses to overwrite an existing account. Keep the source available until verification is complete, and avoid running two active schedules against the same accounts.
 
 ## Backups and maintenance
 
@@ -241,6 +258,7 @@ Before updating the app, take a backup and review the changes. Redeploy the desi
 | Quotes are missing or stale | Check source status, market hours, provider credentials, and any rate-limit retry time. |
 | AI research waits for quotes | Connect market data and wait for a fresh eligible stock or crypto quote. |
 | A saved AI key cannot be opened | Restore the matching encryption master key or reconnect the API key through API Setup. |
+| GMGN key creation says `Insufficient balance` | GMGN applies a qualifying balance requirement to that account. Check its current plan rules; leave wallet research disconnected if you do not want to meet that requirement. |
 | GMGN is disconnected | Save an API key through GMGN connection setup, or set `GMGN_API_KEY` in Coolify and redeploy. |
 | GMGN returns `401` or `403` | Check the key, account access, and IPv4 outbound connectivity. |
 | GMGN requests are paused | Wait for the displayed cooldown or daily reset. Repeated requests do not clear the provider's limit. |

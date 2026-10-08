@@ -15,5 +15,6 @@ export function safeTransferState(input) {
     for(const report of state.research.reports||[]) if(report.status==='running')report.status='interrupted';
   }
   if(state.simulation)state.simulation.enabled=false;
+  if(state.research_trials){state.research_trials.enabled=false;state.research_trials.paused_at=Date.now();for(const probe of state.research_trials.probes||[])if(probe.status==='waiting'){probe.status='cancelled';probe.reason='Migration paused a pending paper entry';}}
   return state;
 }

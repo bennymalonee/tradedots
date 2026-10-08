@@ -1,5 +1,7 @@
 import {syncMemory} from './insights.mjs';
 import {learningScorecard,outcomeContext} from './knowledge.mjs';
+import {registerAgentForecasts,agentSkillSummary,agentSkillSnapshot,blendAgentForecasts} from './agent-skill.mjs';
+import {registerResearchTrial,researchTrialsSummary} from './research-trials.mjs';
 import {resolveResearchEnv,connectionSummary} from './connections.mjs';
 import {readState,mutate,fresh,marketKey} from './paper.mjs';
 const researchDay=now=>new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Stockholm',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(now));
@@ -12,11 +14,15 @@ const researchRoles=[
  ['LUNA','Independently flag risk and uncertainty. Abstain when evidence is inadequate. Never execute an order.']
 ];
 function researchInit(s){return s.research ||= {enabled:false,max_rounds_daily:2,reports:[],usage:{},lease:null,last_started:0};}
-export function researchEvidence(s,now=Date.now()){
+export function researchEvidence(s,now=Date.now(),model='gpt-4.1-mini'){
  const quotes=s.markets.filter(q=>['stocks','crypto'].includes(q.asset_class)&&fresh(q,now)).slice(0,5).map((q,i)=>({evidence_id:'quote:'+i,market_id:marketKey(q),symbol:q.symbol,price:q.price,bid:q.bid,ask:q.ask,quote_at:q.quote_at||q.fetched_at}));
  const sources=s.sources.map((q,i)=>({evidence_id:'source:'+i,key:q.key,status:q.status,cached:!!q.cached}));
  const memory=(s.research?.reports||[]).filter(r=>r.mode==='ai'&&r.status==='completed'&&r.symbol===quotes[0]?.symbol&&(r.finished_at||r.at)<now).slice(0,3).map((r,i)=>({evidence_id:'memory:'+i,symbol:r.symbol,probability_up:r.probability_up,conclusion:r.agents.at(-1)?.summary?.slice(0,350),outcome:(r.outcome?.at||0)<=now?r.outcome||null:null}));
- return {at:now,quotes,sources,memory,limits:{virtual_start_cash:1000,ticket_pct:6,exposure_pct:30,max_positions:7},news_connected:false,broker_execution:false,learning:learningScorecard(s,now),past_outcomes:outcomeContext(s,quotes[0]?.symbol,now)};
+ const skill=agentSkillSummary(s,model,now),trials=researchTrialsSummary(s,now);
+ const ai_agent_skills={policy_version:skill.policy_version,model:skill.model,snapshot:skill.snapshot,roles:skill.roles.map(a=>({name:a.name,scored:a.scored,mean_brier:a.mean_brier,neutral_brier:a.neutral_brier,abstained:a.abstained,expired:a.expired,recent_errors:a.recent_errors?.slice(0,2)||[]}))};
+ const pastProbes=(s.research_trials?.probes||[]).filter(p=>p.status==='closed'&&p.symbol===quotes[0]?.symbol&&Number.isFinite(p.closed_at)&&p.closed_at<now&&Number.isFinite(p.policy_net_pnl)&&Number.isFinite(p.paired_net_advantage));
+ const ai_paper_outcomes={policy_version:trials.experiment?.policy_version||null,symbol:quotes[0]?.symbol||null,closed_pairs:pastProbes.length,mean_policy_net:pastProbes.length?pastProbes.reduce((sum,p)=>sum+p.policy_net_pnl,0)/pastProbes.length:null,paired_net_advantage:pastProbes.length?pastProbes.reduce((sum,p)=>sum+p.paired_net_advantage,0):null,scope:'Past completed same-symbol paper probes after modeled costs; descriptive outcomes do not establish a cause, statistical significance, or future profit.'};
+ return {at:now,quotes,sources,memory,ai_agent_skills,ai_paper_outcomes,limits:{virtual_start_cash:1000,ticket_pct:6,exposure_pct:30,max_positions:7},news_connected:false,broker_execution:false,learning:learningScorecard(s,now),past_outcomes:outcomeContext(s,quotes[0]?.symbol,now)};
 }
 export function validateResearchReply(value,allowed,primarySymbol){
  if(!value||!['bullish','bearish','neutral','abstain'].includes(value.stance))throw Error('Invalid AI stance');
@@ -80,14 +86,15 @@ export async function runResearch(env,input={},scheduled=false){
   if(existing)return{skip:true,report:existing,status:existing.status};
   if(scheduled&&(!r.enabled||now-r.last_started<3600000))return{skip:true,status:'not_due'};
   if(r.lease?.until>now)return{skip:true,status:'busy'};
-  const evidence=researchEvidence(s,now);evidence.memory.push(...recalled.filter(m=>m.symbol===evidence.quotes[0]?.symbol));
+  const evidence=researchEvidence(s,now,env.OPENAI_RESEARCH_MODEL||'gpt-4.1-mini');evidence.memory.push(...recalled.filter(m=>m.symbol===evidence.quotes[0]?.symbol));
   if(mode==='ai'&&!evidence.quotes.length)return{skip:true,status:'waiting_for_quotes',message:'No fresh stock or crypto quote is available; no AI calls made.'};
   for(const d of Object.keys(r.usage))if(d<researchDay(now-7*86400000))delete r.usage[d];
   const usage=r.usage[day] ||= {rounds:0,calls_reserved:0,tokens:0};
   if(mode==='ai'&&usage.rounds>=r.max_rounds_daily)return{skip:true,status:'daily_limit',message:'Daily AI round limit reached.'};
   if(mode==='ai'){usage.rounds++;usage.calls_reserved+=6;r.last_started=now;}
   r.lease={id,until:now+180000};
-  const report={connection_epoch:r.connection_epoch||0,id,mode,status:'running',at:now,scenario:input.scenario||'',agents:[],symbol:evidence.quotes[0]?.symbol||null,market_id:evidence.quotes[0]?.market_id||null,quote_at:evidence.quotes[0]?.quote_at||null,reference_price:evidence.quotes[0]?.price||null,due_at:now+3600000,evidence,probability_up:null,executed:false};
+  const forecast_snapshot={...agentSkillSnapshot(s,env.OPENAI_RESEARCH_MODEL||'gpt-4.1-mini',now),primary_symbol:evidence.quotes[0]?.symbol||null};
+  const report={model:env.OPENAI_RESEARCH_MODEL||'gpt-4.1-mini',agent_policy_version:'agent-skill-v1',forecast_snapshot,connection_epoch:r.connection_epoch||0,id,mode,status:'running',at:now,scenario:input.scenario||'',agents:[],symbol:evidence.quotes[0]?.symbol||null,market_id:evidence.quotes[0]?.market_id||null,quote_at:evidence.quotes[0]?.quote_at||null,reference_price:evidence.quotes[0]?.price||null,due_at:now+3600000,evidence,probability_up:null,executed:false};
   r.reports.unshift(report);r.reports=r.reports.slice(0,20);
   return{claimed:true,report};
  });
@@ -107,16 +114,16 @@ export async function runResearch(env,input={},scheduled=false){
    const citedEarlier=new Set(report.agents.flatMap(a=>a.evidence_ids||[]));
    const roleIds=new Set(roleMemory.map(m=>m.evidence_id));
    const handoffMemory=report.evidence.memory.filter(m=>citedEarlier.has(m.evidence_id)&&!roleIds.has(m.evidence_id));
-   const agentEvidence={...report.evidence,memory:roleMemory,handoff_memory:handoffMemory};
+   const agentEvidence={...report.evidence,memory:roleMemory,handoff_memory:handoffMemory,own_scorecard:report.evidence.ai_agent_skills?.roles.find(a=>a.name===name)||null};
    const answer=await researchAsk(env,name,role,agentEvidence,report.agents,input.scenario);
    report.agents.push({...answer,memory_ids:roleMemory.map(m=>m.evidence_id),previous_agent_count:report.agents.length});
   }
-  const probabilities=report.agents.slice(0,4).map(a=>a.probability_up).filter(Number.isFinite);
-  report.probability_up=probabilities.length?probabilities.reduce((a,b)=>a+b,0)/probabilities.length:null;
+  report.blend=blendAgentForecasts(report.agents,report.forecast_snapshot);
+  report.probability_up=report.blend.probability_up;
   report.status=mode==='preview'?'preview':'completed';
  }catch(error){report.status='failed';report.error=error.name==='TimeoutError'?'AI research step timed out':error.message;}
  report.finished_at=Date.now();
- await mutate(env.DB,s=>{const r=researchInit(s);if(r.lease?.id!==id)return{status:'expired_lease'};r.reports=r.reports.map(p=>p.id===id?report:p);r.lease=null;r.usage[day].tokens+=report.agents.reduce((sum,a)=>sum+(a.tokens||0),0);return{ok:true}});
+ await mutate(env.DB,s=>{const r=researchInit(s);if(r.lease?.id!==id)return{status:'expired_lease'};if((r.connection_epoch||0)!==report.connection_epoch){report.status='failed';report.error='AI connection changed during this round';report.probability_up=null;}r.reports=r.reports.map(p=>p.id===id?report:p);r.lease=null;r.usage[day].tokens+=report.agents.reduce((sum,a)=>sum+(a.tokens||0),0);if(report.status==='completed'&&report.mode==='ai'){registerAgentForecasts(s,report,report.finished_at);registerResearchTrial(s,report,report.finished_at);}return{ok:true}});
  const {state:archivedState}=await readState(env.DB);await syncMemory(env,archivedState);
  return report;
 }
@@ -144,5 +151,5 @@ export function evaluateResearch(s,now=Date.now()){
 }
 export function researchSummary(s,env){
  const r=s.research,day=researchDay(Date.now()),reports=r?.reports||[],scored=reports.filter(p=>p.outcome?.status==='evaluated');
- return{connection:connectionSummary(s,env),configured:connectionSummary(s,env).configured,provider:'OpenAI',model:env.OPENAI_RESEARCH_MODEL||'gpt-4.1-mini',enabled:r?.enabled||false,max_rounds_daily:r?.max_rounds_daily||2,usage_today:r?.usage?.[day]||{rounds:0,calls_reserved:0,tokens:0},running:!!r?.lease&&r.lease.until>Date.now(),reports:reports.slice(0,10),evaluated:scored.length,mean_brier:scored.length?scored.reduce((sum,p)=>sum+p.outcome.brier,0)/scored.length:null,orders_enabled:false,note:'Six sequential model reviews, shared evidence, recalled outcomes, and a recorded handoff between agents. Agent agreement is not independent proof. AI calls are billed by the provider; the round cap bounds requests, not dollar cost. Reports never change risk limits or execute orders.'};
+ return{connection:connectionSummary(s,env),configured:connectionSummary(s,env).configured,provider:'OpenAI',model:env.OPENAI_RESEARCH_MODEL||'gpt-4.1-mini',enabled:r?.enabled||false,max_rounds_daily:r?.max_rounds_daily||2,usage_today:r?.usage?.[day]||{rounds:0,calls_reserved:0,tokens:0},running:!!r?.lease&&r.lease.until>Date.now(),reports:reports.slice(0,10),evaluated:scored.length,mean_brier:scored.length?scored.reduce((sum,p)=>sum+p.outcome.brier,0)/scored.length:null,orders_enabled:false,note:'Six sequential model reviews use shared evidence, per-agent forward scorecards, recalled outcomes, and recorded handoffs. The advisory forecast blend freezes weights before each round and adapts only after enough past scored outcomes. Agent agreement is not independent proof. AI calls are billed by the provider; the round cap bounds requests, not dollar cost. Reports never change risk limits or execute orders.'};
 }

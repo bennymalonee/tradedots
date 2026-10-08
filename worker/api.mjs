@@ -2,6 +2,8 @@ import {syncMemory,agentTrace,performanceReport,readinessReport} from './insight
 import {learningScorecard} from './knowledge.mjs';
 import {evaluationReport} from './evaluation.mjs';
 import {saveResearchConnection} from './connections.mjs';
+import {agentSkillSummary,updateAgentSkills} from './agent-skill.mjs';
+import {researchTrialsControl,researchTrialsSummary,updateResearchTrials} from './research-trials.mjs';
 import {gmgnSummary,getWalletResearch,gmgnConnection,gmgnDiscover,gmgnAnalyze,gmgnActivity,gmgnWatch} from './gmgn.mjs';
 import {runResearch,researchControl,researchSummary,evaluateResearch} from "./research.mjs";
 import {updateSimulation,simulationSummary,simulationControl,simulationDiagnostic} from "./simulation.mjs";
@@ -66,14 +68,14 @@ export async function refreshMonitoring(env){
  try{const desk=await collectMarketDesk(env,reserved.state.positions,reserved.state.sources);let broker=null;if(alpacaReady(env)){try{broker=await alpacaSnapshot(env)}catch(e){broker={...reserved.state.broker,status:'unavailable',paper_endpoint_locked:true,error:e.message}}}
   const updated=await mutate(env.DB,s=>{if(s.tick_lease?.token!==token)return{ok:true,skipped:true,orders_submitted:0};const now=Date.now();if(broker){reconcileBrokerState(s,broker,now);updatePositionMeta(s,broker,now);s.broker=broker;
    const report=brokerTradeReport(broker);for(const trade of report.trades){if(!s.alerts.some(a=>a.order_id===trade.order_id&&a.type==='broker_fill'))s.alerts.unshift({id:crypto.randomUUID(),order_id:trade.order_id,type:'broker_fill',at:now,read:false,message:trade.symbol+' sell filled · '+(trade.gross_pnl===null?'cost basis incomplete':'gross P&L $'+trade.gross_pnl.toFixed(2))+' · fees not reconciled'})}s.alerts=s.alerts.slice(0,500)}
-   const result=observeMonitoring(s,desk,now);updateLearning(s,now);updateSimulation(s,now);evaluateResearch(s,now);
+   const result=observeMonitoring(s,desk,now);updateLearning(s,now);updateSimulation(s,now);evaluateResearch(s,now);updateAgentSkills(s,now);updateResearchTrials(s,now);
    const analysis=monitoringAnalysis(s,now);recordShadowReview(s,analysis,now);s.autonomy=analysis;s.autonomy_history=[analysis,...(s.autonomy_history||[])].slice(0,200);
    for(const exit of analysis.exit_reviews||[])if(!s.alerts.some(a=>a.type==='exit_review'&&a.symbol===exit.symbol&&!a.resolved_at))s.alerts.unshift({id:crypto.randomUUID(),type:'exit_review',symbol:exit.symbol,at:now,read:false,message:exit.symbol+': '+exit.reason+'; manual paper exit required'});
    s.tick_lease=null;return{...result,monitoring_only:true,broker_status:broker?.status||'not_configured',autonomy_status:analysis.status,autonomous_orders:0,orders_submitted:0}});const research=await runResearch(env,{},true);const {state:memoryState}=await readState(env.DB);await syncMemory(env,memoryState);return{...updated.result,research_status:research.status||'idle'};
  }catch(error){await mutate(env.DB,s=>{if(s.tick_lease?.token===token)s.tick_lease=null});throw error}
 }
 export function observeMonitoring(s,desk,now=Date.now()){
- s.markets=desk.markets;s.sources=desk.sources;s.last_tick=now;
+ s.markets=desk.markets.map(q=>({...q,collected_at:q.cached?(s.markets.find(p=>marketKey(p)===marketKey(q)&&p.quote_at===q.quote_at)?.collected_at||null):new Date(now).toISOString()}));s.sources=desk.sources;s.last_tick=now;
  for(const source of desk.sources){const incidents=s.alerts.filter(a=>a.type==='connection'&&a.source_key===source.key&&!a.resolved_at);
   if(['connected','empty'].includes(source.status)){for(const a of incidents){a.resolved_at=now;a.read=true}if(incidents.length)s.alerts.unshift({id:crypto.randomUUID(),type:'connection_recovered',source_key:source.key,message:source.key+': Connection recovered',at:now,read:false})}
   else if(['rate_limited','unavailable'].includes(source.status)){const a=incidents[0];if(a)Object.assign(a,{message:source.key+': '+source.error,updated_at:now,retry_at:source.retry_at});else s.alerts.unshift({id:crypto.randomUUID(),type:'connection',source_key:source.key,message:source.key+': '+source.error,at:now,read:false,retry_at:source.retry_at})}
@@ -164,6 +166,10 @@ export async function collectMarketDesk(env,positions=[],previousSources=[]){con
  for(const position of positions){if(results.some(s=>s.markets.some(q=>q.venue+':'+q.id===position.market_id)))continue;const ix=position.market_id.indexOf(':');const venue=position.market_id.slice(0,ix),id=position.market_id.slice(ix+1);if(venue==='Polymarket'&&/^[0-9]+$/.test(id)){const tracked=await source('polymarket-position','https://gamma-api.polymarket.com/markets/'+id,d=>normalizeTrackedPrediction(d));const target=results.find(s=>s.key==='polymarket');target.markets.push(...tracked.markets)}else if(venue==='Kalshi'&&results.find(s=>s.key==='kalshi').status!=='rate_limited'&&/^[A-Z0-9_-]+$/.test(id)){const tracked=await source('kalshi-position','https://api.elections.kalshi.com/trade-api/v2/markets/'+id,d=>normalizeKalshi({markets:[d.market]}));results.find(s=>s.key==='kalshi').markets.push(...tracked.markets)}}
  return{mode:'monitoring',execution_enabled:false,generated_at:new Date().toISOString(),sources:results,markets:results.flatMap(s=>s.markets.map(m=>({...m,fetched_at:s.last_success_at||s.fetched_at,cached:Boolean(s.cached),source_health:s.health_score}))),agents:[{name:'ATLAS',role:'SCAN',status:'monitoring'},{name:'NOVA',role:'VET',status:'awaiting_chain_verification'},{name:'ORION',role:'RESEARCH',status:'not_connected'},{name:'TITAN',role:'BOOK',status:'awaiting_probability_model'},{name:'VEGA',role:'SIZE',status:'paper_engine_only'},{name:'LUNA',role:'RISK',status:'no_live_positions'}],account:{equity:null,pnl:null,positions:[],status:'not_connected'},engine:{status:'not_deployed',mode:'paper',note:'Continuous execution requires deployment of the separate engine service.'}}}
 
+export function agentLabSummary(state,env={},now=Date.now()){
+ const skills=agentSkillSummary(state,env.OPENAI_RESEARCH_MODEL||'gpt-4.1-mini',now),trials=researchTrialsSummary(state,now);
+ return{skills,trials,specialists:[{name:'SAGE',role:'Forecast learning',kind:'programmed',status:skills.snapshot?.adaptive?'adapting':'collecting',reason:skills.snapshot?.adaptive?'Weights reflect past scored AI forecasts; each new round freezes them.':'Collecting per-agent forward outcomes; equal weights until each forecasting role has 20 scored predictions.'},{name:'AEGIS',role:'Cost and timing audit',kind:'programmed',status:trials.experiment?.status||'waiting',reason:'Tracks delayed, cost-adjusted paper probes against an equal-ticket benchmark; missing exit quotes remain visible.'}],provider_calls:0,orders_submitted:0};
+}
 export async function getDesk(env){
  if(!env.DB)return collectMarketDesk(env);
  const {state}=await readState(env.DB);const now=Date.now();const summary=accountSummary(state,now);
@@ -181,7 +187,7 @@ export async function getDesk(env){
  risk.health=risk.stale_positions||risk.uncertain_pending?'blocked':broker.status==='unavailable'?'degraded':risk.exposure>risk.exposure_limit?'halted':'healthy';risk.utilization_pct=risk.exposure_limit?risk.exposure/risk.exposure_limit*100:0;
  autonomy.consensus_score=autonomy.gates?Math.round(Object.values(autonomy.gates).filter(Boolean).length/Object.keys(autonomy.gates).length*100):0;autonomy.policy=policy;autonomy.regimes=regimes;
  const agents=deskAgentCards({sources:state.sources,markets,broker,autonomy,risk},now);
- return{wallet_connection:gmgnSummary(state,env),insights:{learning:learningScorecard(state,now),validation:state.last_evaluation||null,agents:agentTrace(state,now),performance:performanceReport(state,now),memory:env.MEMORY?await env.MEMORY.stats():{available:false},readiness:state.last_readiness||null},research:researchSummary(state,env),simulation:simulationSummary(state,now),learning:learningSummary(state),mode:'paper',execution_enabled:alpacaReady(env),generated_at:new Date(now).toISOString(),sources:state.sources,markets,broker,autonomy,shadow:shadowSummary(state,now),agents,account:summary,engine:{status:'connected',mode:'paper',running:state.running,halted:state.halted,halt_reason:state.halt_reason,last_tick:state.last_tick,note:alpacaReady(env)?('Monitoring and shadow analysis only; manual Alpaca Paper orders require sign-in.'):'Hosted persistent paper engine. Broker routing is disabled.'},paper:{fill_test:state.last_fill_test||null,config:state.config,risk,analytics,ledger:state.ledger.slice(0,100),decisions:state.decisions.slice(0,50),alerts:state.alerts.slice(0,100),history:state.history.slice(-300),replay:state.last_replay,observations:state.observations.length}};
+ return{agent_lab:agentLabSummary(state,env,now),wallet_connection:gmgnSummary(state,env),insights:{learning:learningScorecard(state,now),validation:state.last_evaluation||null,agents:agentTrace(state,now),performance:performanceReport(state,now),memory:env.MEMORY?await env.MEMORY.stats():{available:false},readiness:state.last_readiness||null},research:researchSummary(state,env),simulation:simulationSummary(state,now),learning:learningSummary(state),mode:'paper',execution_enabled:alpacaReady(env),generated_at:new Date(now).toISOString(),sources:state.sources,markets,broker,autonomy,shadow:shadowSummary(state,now),agents,account:summary,engine:{status:'connected',mode:'paper',running:state.running,halted:state.halted,halt_reason:state.halt_reason,last_tick:state.last_tick,note:alpacaReady(env)?('Monitoring and shadow analysis only; manual Alpaca Paper orders require sign-in.'):'Hosted persistent paper engine. Broker routing is disabled.'},paper:{fill_test:state.last_fill_test||null,config:state.config,risk,analytics,ledger:state.ledger.slice(0,100),decisions:state.decisions.slice(0,50),alerts:state.alerts.slice(0,100),history:state.history.slice(-300),replay:state.last_replay,observations:state.observations.length}};
 }
 async function jsonBody(request){if(!request.headers.get('content-type')?.includes('application/json'))throw Error('JSON content type required');const body=await request.text();if(body.length>1000000)throw Error('Request too large');const input=JSON.parse(body);if(!input||Array.isArray(input)||typeof input!=='object')throw Error('An object is required');return input}
 function interactiveWriteAllowed(request){const origin=request.headers.get('Origin');return Boolean(request.headers.get('oai-authenticated-user-id'))&&(!origin||origin===new URL(request.url).origin)&&request.headers.get('sec-fetch-site')!=='cross-site'}
@@ -189,6 +195,8 @@ export async function routeApi(request,env){const path=new URL(request.url).path
  const response=(data,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
  if(path==='/api/health')return response({status:'ok',mode:'paper',execution_enabled:alpacaReady(env),paper_endpoint_locked:true,database_configured:!!env.DB});
  try{
+ if(path==='/api/agent-lab'){if(request.method!=='GET')return response({error:'Method not allowed'},405);const{state}=await readState(env.DB);return response(agentLabSummary(state,env));}
+ if(path==='/api/agent-lab/control'){if(request.method!=='POST')return response({error:'Method not allowed'},405);if(!interactiveWriteAllowed(request))return response({error:'Sign in to control the paper experiment'},403);const input=await jsonBody(request),now=Date.now();const updated=await mutate(env.DB,s=>researchTrialsControl(s,input,now));return response({ok:true,...updated.result,agent_lab:agentLabSummary(updated.state,env,now)});}
  if(path==='/api/wallets'){
   if(request.method!=='GET')return response({error:'Method not allowed'},405);
   return response(await getWalletResearch(env));
@@ -202,7 +210,7 @@ export async function routeApi(request,env){const path=new URL(request.url).path
  }
  if(path==='/api/memory'&&request.method==='GET'){if(!env.MEMORY)return response({error:'Searchable archive unavailable'},503);const u=new URL(request.url);return response({results:await env.MEMORY.search({q:u.searchParams.get('q')||'',agent:u.searchParams.get('agent')||'',kind:u.searchParams.get('kind')||''}),...await env.MEMORY.stats()})}
  if(path==='/api/desk'&&request.method==='GET')return response(await getDesk(env));
- if(path==='/api/export'&&request.method==='GET'){const{state}=await readState(env.DB);return new Response(JSON.stringify({exported_at:new Date().toISOString(),mode:'paper',account:accountSummary(state),ledger:state.ledger,decisions:state.decisions,history:state.history,observations:state.observations,config:state.config,simulation:state.simulation,learning:state.learning,research:state.research,readiness:state.last_readiness,validation:state.last_evaluation},null,2),{headers:{'Content-Type':'application/json','Content-Disposition':'attachment; filename="dots-paper-ledger.json"','Cache-Control':'no-store'}})}
+ if(path==='/api/export'&&request.method==='GET'){const{state}=await readState(env.DB);return new Response(JSON.stringify({exported_at:new Date().toISOString(),mode:'paper',account:accountSummary(state),ledger:state.ledger,decisions:state.decisions,history:state.history,observations:state.observations,config:state.config,simulation:state.simulation,learning:state.learning,research:state.research,readiness:state.last_readiness,validation:state.last_evaluation,agent_lab:agentLabSummary(state,env)},null,2),{headers:{'Content-Type':'application/json','Content-Disposition':'attachment; filename="dots-paper-ledger.json"','Cache-Control':'no-store'}})}
  if(['/api/evaluation','/api/readiness','/api/memory/sync','/api/tick','/api/fill-test','/api/control','/api/order','/api/replay','/api/simulation/control','/api/simulation/test','/api/research/run','/api/research/preview','/api/research/control','/api/research/connection'].includes(path)){
  if(request.method!=='POST')return response({error:'Method not allowed'},405);
  // /api/fill-test only records an isolated diagnostic; it cannot change account funds or orders.
@@ -228,7 +236,7 @@ export async function routeApi(request,env){const path=new URL(request.url).path
  }
  return response({error:'Not found'},404);
  }catch(error){
-  const message=path.startsWith('/api/wallets')&&error instanceof SyntaxError?'Valid JSON object required':error.message||'Operation failed';
+  const message=(path.startsWith('/api/wallets')||path.startsWith('/api/agent-lab'))&&error instanceof SyntaxError?'Valid JSON object required':error.message||'Operation failed';
   return response({error:message},error.gmgn_code==='rate_limited'?429:400);
  }
 }
