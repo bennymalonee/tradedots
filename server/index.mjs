@@ -9,8 +9,8 @@ if (!validHash(process.env.OWNER_PASSWORD_HASH)) throw Error('Set OWNER_PASSWORD
 const originURL = new URL(process.env.APP_ORIGIN || '');
 if ((!development && originURL.protocol!=='https:') || originURL.pathname!=='/' || originURL.search || originURL.hash || originURL.username || originURL.password) throw Error('APP_ORIGIN must be the HTTPS origin assigned by Coolify');
 const origin = originURL.origin;
-const {pool,DB} = await openDatabase(process.env.DATABASE_URL);
-const env = {...process.env,DB};
+const {pool,DB,MEMORY} = await openDatabase(process.env.DATABASE_URL);
+const env = {...process.env,DB,MEMORY};
 const handler = createHandler({pool,env,worker,origin,development});
 const server = http.createServer(async (req,res) => {
   try {

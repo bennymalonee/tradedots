@@ -1,4 +1,5 @@
 import pg from 'pg';
+import {memorySchema,memoryStore} from './memory.mjs';
 export async function openDatabase(connectionString) {
   if (!connectionString) throw Error('DATABASE_URL is required');
   const pool = new pg.Pool({connectionString, max: 5, connectionTimeoutMillis: 10000});
@@ -14,7 +15,8 @@ export async function openDatabase(connectionString) {
     window_start timestamptz NOT NULL DEFAULT now()
   );
   INSERT INTO login_guard(id) VALUES(1) ON CONFLICT DO NOTHING;`);
-  return {pool, DB: makeAdapter(pool)};
+  await pool.query(memorySchema);
+  return {pool, DB: makeAdapter(pool), MEMORY:memoryStore(pool)};
 }
 export function makeAdapter(pool) {
   const allowed = new Map([

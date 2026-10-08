@@ -22,11 +22,13 @@ DotsTrading brings market monitoring, six agent roles, experimental strategy lea
 | Adaptive research | Scores recorded forecasts against future observations and adjusts experimental strategy weights after enough outcomes. |
 | Isolated simulation | Compares adaptive and fixed-momentum virtual accounts with modeled spreads, fees, and risk limits. |
 | Paper brokerage | Supports authenticated manual proposals through the locked Alpaca Paper endpoint. |
-| Persistent history | Stores account state, agent reports, forecasts, simulation results, and alerts in PostgreSQL. |
+| Searchable memory | Archives research, forecast outcomes, trade lessons, and agent decisions in PostgreSQL with full-text and symbol search. |
+| Readiness checks | Reports functional simulation checks, all six agent histories, quote freshness, configuration, and evidence gaps. |
+| Performance comparison | Separates realized and unrealized net results, fees, returns, and sampled drawdown for both virtual accounts. |
 
 **Execution scope:** background monitoring does not submit broker orders. AI reports do not change risk limits or place trades. Simulated fills are separate from the main account and brokerage. Research and simulation results do not establish future profitability.
 
-Memory currently uses bounded stored history. Hindsight, vector search, and model retraining are not included.
+The active desk keeps bounded recent history; the memory archive persists research, scored forecasts, and simulated trade lessons separately. Detailed decision records are retained for 14 days. Hindsight, vector search, and model retraining are not included.
 
 ## Architecture
 
@@ -42,6 +44,19 @@ flowchart LR
 ```
 
 The dashboard, API, and optional scheduler run in the `dots` service. PostgreSQL runs in the `postgres` service with a persistent `dots-data` volume. Only the app needs a public domain; keep the database private.
+
+## Evidence workspace
+
+The **Desk Evidence & Readiness** panel has four views:
+
+- **Agent activity:** recorded task results, timestamps, quote and sizing inputs, citations, and recent research reviews. Waiting, vetoed, and stale activity are labeled explicitly.
+- **Memory:** search by keyword or symbol, then filter by agent and record type. Expand a result to inspect its supporting evidence and outcome. Use **Archive available history** to backfill the history still present in the desk.
+- **Readiness:** run isolated synthetic checks and save a snapshot of current configuration and evidence. Warnings identify missing prerequisites; failures identify broken checks. This does not contact AI providers or execute orders.
+- **Performance:** compare equal-capital virtual accounts after modeled fees. Realized net results remain visible when stale position marks make total equity unavailable. Both accounts need at least 30 closed trades before the report labels the comparison preliminary; that threshold does not establish statistical significance.
+
+AI research can retrieve up to three archived reviews or simulated trade lessons for the current primary symbol and cite their archive IDs. Memories remain untrusted evidence; retrieval does not change execution permissions, strategy weights, or risk limits. Trade lessons describe observed outcomes, not proven causes.
+
+No existing history can be recovered after it has already been discarded. Archive capture begins with available records after this version is installed, and continues on monitoring cycles and completed research rounds. The archive uses PostgreSQL full-text search without embedding API charges. AI calls that include retrieved context still incur normal provider charges.
 
 ## Deploy with Coolify
 
@@ -150,7 +165,7 @@ Commit application code and placeholder configuration only. Keep passwords, prov
 
 ## Data migration
 
-Use a **full desk-state snapshot** when moving an existing installation. The dashboard ledger export is useful for analysis but does not contain everything needed to restore an account.
+Use a **full desk-state snapshot** when moving an existing installation. The dashboard ledger export is useful for analysis but does not contain everything needed to restore an account. To move an existing searchable memory archive as well, restore a complete PostgreSQL backup: state snapshots do not include the separate `agent_memory` table.
 
 1. Pause source monitoring, simulation, scheduled AI research, and external automation before taking the final snapshot.
 2. Export the full state. For a Sites installation, obtain the JSON stored in `desk_state.payload` through its database administration tools. Remove `ai_connection` before transferring it; reconnect the AI key at the destination.
@@ -177,7 +192,7 @@ To create a portable state snapshot, run this in the app container:
 node scripts/state-transfer.mjs export /tmp/dots.backup.json
 ```
 
-The exporter excludes saved AI credentials and refuses to overwrite an existing file. Download the snapshot privately, then remove the temporary copy. This supplements full database backups; it does not include session or login-throttling tables.
+The exporter excludes saved AI credentials and refuses to overwrite an existing file. Download the snapshot privately, then remove the temporary copy. This supplements full database backups; it does not include the memory archive, session, or login-throttling tables.
 
 Before updating the app, take a backup and review the changes. Redeploy the desired commit through Coolify, then check service health and dashboard data.
 

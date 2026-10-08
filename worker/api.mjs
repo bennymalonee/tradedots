@@ -1,3 +1,4 @@
+import {syncMemory,agentTrace,performanceReport,readinessReport} from './insights.mjs';
 import {saveResearchConnection} from './connections.mjs';
 import {runResearch,researchControl,researchSummary,evaluateResearch} from "./research.mjs";
 import {updateSimulation,simulationSummary,simulationControl,simulationDiagnostic} from "./simulation.mjs";
@@ -65,7 +66,7 @@ export async function refreshMonitoring(env){
    const result=observeMonitoring(s,desk,now);updateLearning(s,now);updateSimulation(s,now);evaluateResearch(s,now);
    const analysis=monitoringAnalysis(s,now);recordShadowReview(s,analysis,now);s.autonomy=analysis;s.autonomy_history=[analysis,...(s.autonomy_history||[])].slice(0,200);
    for(const exit of analysis.exit_reviews||[])if(!s.alerts.some(a=>a.type==='exit_review'&&a.symbol===exit.symbol&&!a.resolved_at))s.alerts.unshift({id:crypto.randomUUID(),type:'exit_review',symbol:exit.symbol,at:now,read:false,message:exit.symbol+': '+exit.reason+'; manual paper exit required'});
-   s.tick_lease=null;return{...result,monitoring_only:true,broker_status:broker?.status||'not_configured',autonomy_status:analysis.status,autonomous_orders:0,orders_submitted:0}});const research=await runResearch(env,{},true);return{...updated.result,research_status:research.status||'idle'};
+   s.tick_lease=null;return{...result,monitoring_only:true,broker_status:broker?.status||'not_configured',autonomy_status:analysis.status,autonomous_orders:0,orders_submitted:0}});const research=await runResearch(env,{},true);const {state:memoryState}=await readState(env.DB);await syncMemory(env,memoryState);return{...updated.result,research_status:research.status||'idle'};
  }catch(error){await mutate(env.DB,s=>{if(s.tick_lease?.token===token)s.tick_lease=null});throw error}
 }
 export function observeMonitoring(s,desk,now=Date.now()){
@@ -177,7 +178,7 @@ export async function getDesk(env){
  risk.health=risk.stale_positions||risk.uncertain_pending?'blocked':broker.status==='unavailable'?'degraded':risk.exposure>risk.exposure_limit?'halted':'healthy';risk.utilization_pct=risk.exposure_limit?risk.exposure/risk.exposure_limit*100:0;
  autonomy.consensus_score=autonomy.gates?Math.round(Object.values(autonomy.gates).filter(Boolean).length/Object.keys(autonomy.gates).length*100):0;autonomy.policy=policy;autonomy.regimes=regimes;
  const agents=deskAgentCards({sources:state.sources,markets,broker,autonomy,risk},now);
- return{research:researchSummary(state,env),simulation:simulationSummary(state,now),learning:learningSummary(state),mode:'paper',execution_enabled:alpacaReady(env),generated_at:new Date(now).toISOString(),sources:state.sources,markets,broker,autonomy,shadow:shadowSummary(state,now),agents,account:summary,engine:{status:'connected',mode:'paper',running:state.running,halted:state.halted,halt_reason:state.halt_reason,last_tick:state.last_tick,note:alpacaReady(env)?('Monitoring and shadow analysis only; manual Alpaca Paper orders require sign-in.'):'Hosted persistent paper engine. Broker routing is disabled.'},paper:{fill_test:state.last_fill_test||null,config:state.config,risk,analytics,ledger:state.ledger.slice(0,100),decisions:state.decisions.slice(0,50),alerts:state.alerts.slice(0,100),history:state.history.slice(-300),replay:state.last_replay,observations:state.observations.length}};
+ return{insights:{agents:agentTrace(state,now),performance:performanceReport(state,now),memory:env.MEMORY?await env.MEMORY.stats():{available:false},readiness:state.last_readiness||null},research:researchSummary(state,env),simulation:simulationSummary(state,now),learning:learningSummary(state),mode:'paper',execution_enabled:alpacaReady(env),generated_at:new Date(now).toISOString(),sources:state.sources,markets,broker,autonomy,shadow:shadowSummary(state,now),agents,account:summary,engine:{status:'connected',mode:'paper',running:state.running,halted:state.halted,halt_reason:state.halt_reason,last_tick:state.last_tick,note:alpacaReady(env)?('Monitoring and shadow analysis only; manual Alpaca Paper orders require sign-in.'):'Hosted persistent paper engine. Broker routing is disabled.'},paper:{fill_test:state.last_fill_test||null,config:state.config,risk,analytics,ledger:state.ledger.slice(0,100),decisions:state.decisions.slice(0,50),alerts:state.alerts.slice(0,100),history:state.history.slice(-300),replay:state.last_replay,observations:state.observations.length}};
 }
 async function jsonBody(request){if(!request.headers.get('content-type')?.includes('application/json'))throw Error('JSON content type required');const body=await request.text();if(body.length>1000000)throw Error('Request too large');const input=JSON.parse(body);if(!input||Array.isArray(input)||typeof input!=='object')throw Error('An object is required');return input}
 function interactiveWriteAllowed(request){const origin=request.headers.get('Origin');return Boolean(request.headers.get('oai-authenticated-user-id'))&&(!origin||origin===new URL(request.url).origin)&&request.headers.get('sec-fetch-site')!=='cross-site'}
@@ -185,15 +186,18 @@ export async function routeApi(request,env){const path=new URL(request.url).path
  const response=(data,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
  if(path==='/api/health')return response({status:'ok',mode:'paper',execution_enabled:alpacaReady(env),paper_endpoint_locked:true,database_configured:!!env.DB});
  try{
+ if(path==='/api/memory'&&request.method==='GET'){if(!env.MEMORY)return response({error:'Searchable archive unavailable'},503);const u=new URL(request.url);return response({results:await env.MEMORY.search({q:u.searchParams.get('q')||'',agent:u.searchParams.get('agent')||'',kind:u.searchParams.get('kind')||''}),...await env.MEMORY.stats()})}
  if(path==='/api/desk'&&request.method==='GET')return response(await getDesk(env));
- if(path==='/api/export'&&request.method==='GET'){const{state}=await readState(env.DB);return new Response(JSON.stringify({exported_at:new Date().toISOString(),mode:'paper',account:accountSummary(state),ledger:state.ledger,decisions:state.decisions,history:state.history,observations:state.observations,config:state.config,simulation:state.simulation,learning:state.learning,research:state.research},null,2),{headers:{'Content-Type':'application/json','Content-Disposition':'attachment; filename="dots-paper-ledger.json"','Cache-Control':'no-store'}})}
- if(['/api/tick','/api/fill-test','/api/control','/api/order','/api/replay','/api/simulation/control','/api/simulation/test','/api/research/run','/api/research/preview','/api/research/control','/api/research/connection'].includes(path)){
+ if(path==='/api/export'&&request.method==='GET'){const{state}=await readState(env.DB);return new Response(JSON.stringify({exported_at:new Date().toISOString(),mode:'paper',account:accountSummary(state),ledger:state.ledger,decisions:state.decisions,history:state.history,observations:state.observations,config:state.config,simulation:state.simulation,learning:state.learning,research:state.research,readiness:state.last_readiness},null,2),{headers:{'Content-Type':'application/json','Content-Disposition':'attachment; filename="dots-paper-ledger.json"','Cache-Control':'no-store'}})}
+ if(['/api/readiness','/api/memory/sync','/api/tick','/api/fill-test','/api/control','/api/order','/api/replay','/api/simulation/control','/api/simulation/test','/api/research/run','/api/research/preview','/api/research/control','/api/research/connection'].includes(path)){
  if(request.method!=='POST')return response({error:'Method not allowed'},405);
  // /api/fill-test only records an isolated diagnostic; it cannot change account funds or orders.
  // /api/tick is a shared updater behind this owner-private Site's access boundary.
  // Interactive money-state changes require the platform's signed-in visitor identity.
  if(!['/api/tick','/api/fill-test','/api/simulation/test','/api/research/preview'].includes(path)&&!interactiveWriteAllowed(request))return response({error:'Sign in to this private Site to change paper account state'},403);
  const input=await jsonBody(request);
+ if(path==='/api/readiness'){const {state}=await readState(env.DB);const report=readinessReport(state,env);await mutate(env.DB,s=>{s.last_readiness=report;return null});return response(report)}
+ if(path==='/api/memory/sync'){const {state}=await readState(env.DB);return response(await syncMemory(env,state,true))}
  if(path==='/api/research/connection')return response(await saveResearchConnection(env,input));
  if(path==='/api/research/run')return response(await runResearch(env,{...input,mode:'ai'}));
  if(path==='/api/research/preview')return response(await runResearch(env,{...input,mode:'preview'}));

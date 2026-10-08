@@ -1,3 +1,4 @@
+import {syncMemory} from './insights.mjs';
 import {resolveResearchEnv,connectionSummary} from './connections.mjs';
 import {readState,mutate,fresh,marketKey} from './paper.mjs';
 const researchDay=now=>new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Stockholm',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(now));
@@ -43,6 +44,26 @@ async function researchAsk(env,name,role,evidence,previous,scenario){
  let parsed;try{parsed=JSON.parse(body.choices?.[0]?.message?.content||'')}catch{throw Error('AI response was not valid JSON')}
  return {name,...validateResearchReply(parsed,allowed,evidence.quotes[0]?.symbol),tokens:Number(body.usage?.total_tokens)||0};
 }
+async function recallResearchMemories(env,now){
+ if(!env.MEMORY)return [];
+ const {state}=await readState(env.DB);
+ const symbol=state.markets.find(q=>['stocks','crypto'].includes(q.asset_class)&&fresh(q,now))?.symbol;
+ if(!symbol)return [];
+ const matches=await Promise.all([
+  env.MEMORY.search({symbol,kind:'research',q:'spread OR volatility OR risk',limit:20}),
+  env.MEMORY.search({symbol,kind:'lesson',limit:3})
+ ]);
+ const rows=[...matches[0],...matches[1]].sort((a,b)=>(b.relevance||0)-(a.relevance||0)||b.at-a.at);
+ const seen=new Set();
+ return rows.filter(d=>{
+  const key=d.evidence.report_id||d.id;
+  if(d.at>=now||seen.has(key)||!['research','lesson'].includes(d.kind))return false;
+  if(d.kind==='research'&&(d.evidence.mode!=='ai'||d.evidence.status!=='completed'))return false;
+  seen.add(key);return true;
+ }).slice(0,3).map(d=>({evidence_id:'archive:'+d.id,symbol:d.symbol,conclusion:d.text.slice(0,350),
+  probability_up:d.evidence.probability_up??null,outcome:d.evidence.outcome||null,
+  origin:'searchable_archive',source_id:d.id}));
+}
 export async function runResearch(env,input={},scheduled=false){
  const mode=input.mode==='preview'?'preview':'ai',now=Date.now();
  if(mode==='ai')env=await resolveResearchEnv(env);
@@ -50,12 +71,13 @@ export async function runResearch(env,input={},scheduled=false){
  if(typeof input.scenario!=='undefined'&&(typeof input.scenario!=='string'||input.scenario.length>3000))throw Error('Scenario text must be at most 3,000 characters');
  if(!scheduled&&(typeof input.intent_id!=='string'||!/^[a-zA-Z0-9_-]{1,100}$/.test(input.intent_id)))throw Error('A unique research intent_id is required');
  const id=scheduled?'scheduled-'+now:input.intent_id,day=researchDay(now);
+ const recalled=mode==='ai'?await recallResearchMemories(env,now):[];
  const reserved=await mutate(env.DB,s=>{
   const r=researchInit(s),existing=r.reports.find(p=>p.id===id);
   if(existing)return{skip:true,report:existing,status:existing.status};
   if(scheduled&&(!r.enabled||now-r.last_started<3600000))return{skip:true,status:'not_due'};
   if(r.lease?.until>now)return{skip:true,status:'busy'};
-  const evidence=researchEvidence(s,now);
+  const evidence=researchEvidence(s,now);evidence.memory.push(...recalled.filter(m=>m.symbol===evidence.quotes[0]?.symbol));
   if(mode==='ai'&&!evidence.quotes.length)return{skip:true,status:'waiting_for_quotes',message:'No fresh stock or crypto quote is available; no AI calls made.'};
   for(const d of Object.keys(r.usage))if(d<researchDay(now-7*86400000))delete r.usage[d];
   const usage=r.usage[day] ||= {rounds:0,calls_reserved:0,tokens:0};
@@ -83,6 +105,7 @@ export async function runResearch(env,input={},scheduled=false){
  }catch(error){report.status='failed';report.error=error.name==='TimeoutError'?'AI research step timed out':error.message;}
  report.finished_at=Date.now();
  await mutate(env.DB,s=>{const r=researchInit(s);if(r.lease?.id!==id)return{status:'expired_lease'};r.reports=r.reports.map(p=>p.id===id?report:p);r.lease=null;r.usage[day].tokens+=report.agents.reduce((sum,a)=>sum+(a.tokens||0),0);return{ok:true}});
+ const {state:archivedState}=await readState(env.DB);await syncMemory(env,archivedState);
  return report;
 }
 export function researchControl(s,input,env){

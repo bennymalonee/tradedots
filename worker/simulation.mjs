@@ -16,16 +16,16 @@ function simRun(account,state,enabled,adaptive,now){
  account.markets=state.markets.filter(q=>q.asset_class==='stocks').map(q=>({...q,venue:'Simulation',id:q.symbol}));
  account.running=enabled&&!state.halted;
  const checks=[];
- const push=(name,pass,reason,symbol)=>checks.push({agent:name,pass,reason,symbol,at:now});
+ const push=(name,pass,reason,symbol,stage='gate',evidence={})=>checks.push({agent:name,pass,reason,symbol,at:now,stage,evidence});
  const learned=adaptive&&(state.learning?.evaluated||0)>=20;
  const weights=learningWeights(state.learning?.stats||{});
  for(const p of [...account.positions]){
   const q=account.markets.find(q=>marketKey(q)===p.market_id);
-  if(!fresh(q,now)){push('LUNA',false,'Exit waiting for a fresh book; no fill invented',p.symbol);continue;}
+  if(!fresh(q,now)){push('LUNA',false,'Exit waiting for a fresh book; no fill invented',p.symbol,'exit',{quote_at:q?.quote_at||q?.fetched_at||null});continue;}
   const samples=state.learning?.series?.['Alpaca:'+p.symbol]?.samples||[];
   const signal=simSignal(samples,weights,learned),move=q.bid/p.entry_price-1;
   const reason=move<=-.02?'2% stop':move>=.04?'4% target':now-p.opened_at>=3600000?'One-hour holding limit':signal.exit?'Signal reversal':null;
-  if(reason){const result=order(account,{intent_id:'sim-exit:'+p.market_id+':'+p.opened_at+':'+now,market_id:p.market_id,side:'sell',rule:reason},now,true);push('LUNA',result.status==='filled',reason,p.symbol);}
+  if(reason){const result=order(account,{intent_id:'sim-exit:'+p.market_id+':'+p.opened_at+':'+now,market_id:p.market_id,side:'sell',rule:reason},now,true);push('LUNA',result.status==='filled',reason,p.symbol,'exit',{bid:q.bid,entry_price:p.entry_price,move_pct:move*100,quote_at:q.quote_at||q.fetched_at,fill_id:result.id||null});}
  }
  const riskSummary=accountSummary(account,now),dayKey=new Date(now).toISOString().slice(0,10);
  if(riskSummary.equity!==null){const day=account.daily[dayKey] ||= {start_cents:Math.round(riskSummary.equity*100)};if(riskSummary.equity*100<=day.start_cents*(1-account.config.daily_loss_pct/100)){account.halted=true;account.halt_reason='Simulation daily loss limit reached';}}
@@ -38,14 +38,20 @@ function simRun(account,state,enabled,adaptive,now){
    const evidence=series.length>=6&&series.at(-1).at-series[Math.max(0,series.length-12)].at>=240000;
    const exposure=summary.positions.reduce((sum,p)=>sum+(p.mark??0),0),dollars=Math.max(0,Math.min(summary.cash*.06,(summary.equity||0)*.30-exposure));
    const gates=[['ATLAS',fresh(q,now),'Fresh source quote'],['ORION',evidence,'Six unique quotes across at least four minutes'],['TITAN',signal.buy&&signal.volatility<.03,signal.reason+'; volatility below 3%'],['NOVA',book<=.005&&Math.abs(signal.drift)>book+.002,'Valid book, spread ≤0.5%; signal magnitude exceeds modeled spread and round-trip fees'],['VEGA',summary.equity!==null&&dollars>=1&&account.positions.length<7,'6% cash ticket, 30% exposure, seven slots'],['LUNA',!account.halted&&!state.halted,'Independent halt and daily-loss veto']];
-   for(const [name,pass,reason]of gates)push(name,pass,reason,q.symbol);
+   const inputs={quote_at:q.quote_at||q.fetched_at,price:q.price,bid:q.bid,ask:q.ask,samples:series.length,drift_pct:signal.drift*100,probability_up:signal.probability??null,volatility:signal.volatility??null,spread_pct:Number.isFinite(book)?book*100:null,ticket:dollars,cash:summary.cash,equity:summary.equity,exposure,positions:account.positions.length};
+   for(const [name,pass,reason]of gates)push(name,pass,reason,q.symbol,'gate',inputs);
    if(gates.every(g=>g[1])){
     const result=order(account,{intent_id:'sim-entry:'+q.symbol+':'+now,market_id:marketKey(q),side:'buy',dollars},now,true);
-    push(result.status==='filled'?'VEGA':'LUNA',result.status==='filled',result.reason||'Simulated entry at ask, including 0.1% modeled fee',q.symbol);
+    push(result.status==='filled'?'VEGA':'LUNA',result.status==='filled',result.reason||'Simulated entry at ask, including 0.1% modeled fee',q.symbol,'entry',{...inputs,fill_id:result.id||null});
    }
   }
  }
  const summary=accountSummary(account,now);
+ if(summary.equity!==null){
+  const points=account.performance_stats?[{equity:summary.equity}]:[...account.history,{equity:summary.equity}];
+  const prior=account.performance_stats ||= {peak_equity:account.initial_cents/100,max_drawdown_pct:0};
+  for(const point of points)if(Number.isFinite(point.equity)){prior.peak_equity=Math.max(prior.peak_equity,point.equity);if(prior.peak_equity>0)prior.max_drawdown_pct=Math.max(prior.max_drawdown_pct,(prior.peak_equity-point.equity)/prior.peak_equity*100);}
+ }
  account.history.push({at:now,equity:summary.equity});account.history=account.history.slice(-1000);
  account.decisions=account.decisions.slice(0,200);account.alerts=account.alerts.slice(0,100);
  // Keep the audit ledger intact; the existing 10,000-entry guard stops new entries.
@@ -62,7 +68,7 @@ export function updateSimulation(state,now=Date.now()){
 }
 function simMetrics(account,now){
  const summary=accountSummary(account,now),closed=account.ledger.filter(l=>l.side==='sell'),wins=closed.filter(l=>l.realized_pnl>0),loss=closed.reduce((s,l)=>s+Math.max(0,-l.realized_pnl),0),gain=wins.reduce((s,l)=>s+l.realized_pnl,0);
- let peak=1000,drawdown=0;for(const p of account.history){if(p.equity===null)continue;peak=Math.max(peak,p.equity);drawdown=Math.max(drawdown,(peak-p.equity)/peak*100);}
+ let peak=account.initial_cents/100,drawdown=0;for(const p of account.history){if(p.equity===null)continue;peak=Math.max(peak,p.equity);drawdown=Math.max(drawdown,(peak-p.equity)/peak*100);}drawdown=Math.max(drawdown,account.performance_stats?.max_drawdown_pct||0);
  return {cash:summary.cash,equity:summary.equity,pnl:summary.pnl,positions:summary.positions,closed_trades:closed.length,win_rate:closed.length?wins.length/closed.length*100:null,profit_factor:loss?gain/loss:null,max_drawdown_pct:drawdown,fees:account.ledger.reduce((s,l)=>s+l.fee,0),halted:account.halted,halt_reason:account.halt_reason,ledger:account.ledger.slice(0,30)};
 }
 export function simulationSummary(state,now=Date.now()){
