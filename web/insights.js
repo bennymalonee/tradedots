@@ -11,7 +11,7 @@
   panel.append(make('p','See recorded decisions, retrieve past evidence, check readiness, and compare virtual results.','market-note'));
   const nav=make('div','','insight-tabs');nav.setAttribute('role','tablist');nav.setAttribute('aria-label','Desk evidence');
   for(const [id,label]of [['agents','Agent activity'],['memory','Memory'],['readiness','Readiness'],['performance','Performance']]) {
-   const b=make('button',label);b.id='insight-tab-'+id;b.type='button';b.setAttribute('role','tab');b.setAttribute('aria-controls','insight-'+id);b.onclick=()=>{tab=id;render();if(id==='memory'&&!memoryLoaded)search();};nav.append(b);
+   const b=make('button',label);b.id='insight-tab-'+id;b.type='button';b.setAttribute('role','tab');b.setAttribute('aria-controls','insight-'+id);b.onclick=()=>{tab=id;render();if(id==='memory'&&!memoryLoaded)search();window.dispatchEvent(new CustomEvent('desk-tab-selected',{detail:{tab:id}}));};nav.append(b);
    const content=make('div','','insight-content');content.id='insight-'+id;content.setAttribute('role','tabpanel');content.setAttribute('aria-labelledby',b.id);panel.append(content);
   }
   nav.addEventListener('keydown',e=>{const buttons=[...nav.querySelectorAll('button')],index=buttons.indexOf(document.activeElement);if(index<0)return;let next;if(e.key==='ArrowRight')next=(index+1)%buttons.length;else if(e.key==='ArrowLeft')next=(index+buttons.length-1)%buttons.length;else if(e.key==='Home')next=0;else if(e.key==='End')next=buttons.length-1;else return;e.preventDefault();buttons[next].focus();buttons[next].click();});
@@ -97,5 +97,6 @@
   renderAgents();renderReadiness();renderPerformance();
  }
  window.addEventListener('desk-data',e=>{if(!e.detail.insights)return;latest=e.detail.insights;render();});
+ window.addEventListener('desk-navigate',e=>{if(!latest||!['agents','memory','readiness','performance'].includes(e.detail?.tab))return;tab=e.detail.tab;render();if(tab==='memory'&&!memoryLoaded)search();});
  if(window.dotsDeskData?.insights){latest=window.dotsDeskData.insights;render();}
 })();

@@ -47,6 +47,8 @@ The dashboard, API, and optional scheduler run in the `dots` service. PostgreSQL
 
 ## Evidence workspace
 
+The sidebar groups all dashboard sections into **Workspace**, **Research**, **Trading**, **Safety**, and **Settings**. It collapses on desktop and opens as a drawer on smaller screens. Memory, readiness, and performance links select their corresponding tabs; risk settings and AI connection links open the setup dialogs. Ledger export and sign-out stay at the bottom of the menu.
+
 The **Desk Evidence & Readiness** panel has four views:
 
 - **Agent activity:** recorded task results, timestamps, quote and sizing inputs, citations, and recent research reviews. Waiting, vetoed, and stale activity are labeled explicitly.
