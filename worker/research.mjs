@@ -1,4 +1,5 @@
 import {syncMemory} from './insights.mjs';
+import {learningScorecard,outcomeContext} from './knowledge.mjs';
 import {resolveResearchEnv,connectionSummary} from './connections.mjs';
 import {readState,mutate,fresh,marketKey} from './paper.mjs';
 const researchDay=now=>new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Stockholm',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(now));
@@ -14,8 +15,8 @@ function researchInit(s){return s.research ||= {enabled:false,max_rounds_daily:2
 export function researchEvidence(s,now=Date.now()){
  const quotes=s.markets.filter(q=>['stocks','crypto'].includes(q.asset_class)&&fresh(q,now)).slice(0,5).map((q,i)=>({evidence_id:'quote:'+i,market_id:marketKey(q),symbol:q.symbol,price:q.price,bid:q.bid,ask:q.ask,quote_at:q.quote_at||q.fetched_at}));
  const sources=s.sources.map((q,i)=>({evidence_id:'source:'+i,key:q.key,status:q.status,cached:!!q.cached}));
- const memory=(s.research?.reports||[]).filter(r=>r.mode==='ai'&&r.status==='completed').slice(0,3).map((r,i)=>({evidence_id:'memory:'+i,symbol:r.symbol,probability_up:r.probability_up,conclusion:r.agents.at(-1)?.summary?.slice(0,350),outcome:r.outcome||null}));
- return {at:now,quotes,sources,memory,limits:{virtual_start_cash:1000,ticket_pct:6,exposure_pct:30,max_positions:7},news_connected:false,broker_execution:false};
+ const memory=(s.research?.reports||[]).filter(r=>r.mode==='ai'&&r.status==='completed'&&r.symbol===quotes[0]?.symbol&&(r.finished_at||r.at)<now).slice(0,3).map((r,i)=>({evidence_id:'memory:'+i,symbol:r.symbol,probability_up:r.probability_up,conclusion:r.agents.at(-1)?.summary?.slice(0,350),outcome:(r.outcome?.at||0)<=now?r.outcome||null:null}));
+ return {at:now,quotes,sources,memory,limits:{virtual_start_cash:1000,ticket_pct:6,exposure_pct:30,max_positions:7},news_connected:false,broker_execution:false,learning:learningScorecard(s,now),past_outcomes:outcomeContext(s,quotes[0]?.symbol,now)};
 }
 export function validateResearchReply(value,allowed,primarySymbol){
  if(!value||!['bullish','bearish','neutral','abstain'].includes(value.stance))throw Error('Invalid AI stance');
@@ -40,7 +41,7 @@ async function researchAsk(env,name,role,evidence,previous,scenario){
  ]})});
  if(!response.ok)throw Error('AI provider returned HTTP '+response.status);
  const body=await response.json();
- const allowed=new Set([...evidence.quotes,...evidence.sources,...evidence.memory].map(q=>q.evidence_id));
+ const allowed=new Set([...evidence.quotes,...evidence.sources,...evidence.memory,...(evidence.handoff_memory||[])].map(q=>q.evidence_id));
  let parsed;try{parsed=JSON.parse(body.choices?.[0]?.message?.content||'')}catch{throw Error('AI response was not valid JSON')}
  return {name,...validateResearchReply(parsed,allowed,evidence.quotes[0]?.symbol),tokens:Number(body.usage?.total_tokens)||0};
 }
@@ -50,18 +51,20 @@ async function recallResearchMemories(env,now){
  const symbol=state.markets.find(q=>['stocks','crypto'].includes(q.asset_class)&&fresh(q,now))?.symbol;
  if(!symbol)return [];
  const matches=await Promise.all([
-  env.MEMORY.search({symbol,kind:'research',q:'spread OR volatility OR risk',limit:20}),
-  env.MEMORY.search({symbol,kind:'lesson',limit:3})
+  env.MEMORY.search({symbol,kind:'research',limit:20}),
+  env.MEMORY.search({symbol,kind:'lesson',limit:8}),
+  env.MEMORY.search({symbol,kind:'forecast',limit:8})
  ]);
- const rows=[...matches[0],...matches[1]].sort((a,b)=>(b.relevance||0)-(a.relevance||0)||b.at-a.at);
- const seen=new Set();
+ const rows=matches.flat().sort((a,b)=>(b.relevance||0)-(a.relevance||0)||b.at-a.at);
+ const seen=new Set(),kindCounts={research:0,lesson:0,forecast:0};
  return rows.filter(d=>{
-  const key=d.evidence.report_id||d.id;
-  if(d.at>=now||seen.has(key)||!['research','lesson'].includes(d.kind))return false;
+  const key=d.evidence.report_id?d.evidence.report_id+':'+d.agent:d.id;
+  if(d.symbol!==symbol||d.at>=now||seen.has(key)||!['research','lesson','forecast'].includes(d.kind)||(d.evidence.outcome?.at||0)>now)return false;
   if(d.kind==='research'&&(d.evidence.mode!=='ai'||d.evidence.status!=='completed'))return false;
-  seen.add(key);return true;
- }).slice(0,3).map(d=>({evidence_id:'archive:'+d.id,symbol:d.symbol,conclusion:d.text.slice(0,350),
-  probability_up:d.evidence.probability_up??null,outcome:d.evidence.outcome||null,
+  if(kindCounts[d.kind]>=({research:6,lesson:3,forecast:3}[d.kind]))return false;
+  seen.add(key);kindCounts[d.kind]++;return true;
+ }).map(d=>({evidence_id:'archive:'+d.id,symbol:d.symbol,agent:d.agent,kind:d.kind,conclusion:d.text.slice(0,350),
+  probability_up:d.evidence.probability_up??null,outcome:d.evidence.outcome||(d.kind==='lesson'?{realized_net:d.evidence.realized_pnl,simulated:true}:d.kind==='forecast'?{brier:d.evidence.brier,actual:d.evidence.actual}:null),
   origin:'searchable_archive',source_id:d.id}));
 }
 export async function runResearch(env,input={},scheduled=false){
@@ -97,7 +100,16 @@ export async function runResearch(env,input={},scheduled=false){
    const {state}=await readState(env.DB);
    if((state.research?.connection_epoch||0)!==report.connection_epoch)throw Error('AI connection changed during this round');
    if(scheduled&&!state.research?.enabled)throw Error('Scheduled AI research was disabled during this round');
-   report.agents.push(await researchAsk(env,name,role,report.evidence,report.agents,input.scenario));
+   const preferred=['VEGA','LUNA'].includes(name)?'lesson':name==='TITAN'?'forecast':'research';
+   const priority=m=>Number(m.kind===preferred)*2+Number(m.agent===name);
+   const ordered=[...report.evidence.memory].sort((a,b)=>priority(b)-priority(a));
+   const roleMemory=ordered.slice(0,3);
+   const citedEarlier=new Set(report.agents.flatMap(a=>a.evidence_ids||[]));
+   const roleIds=new Set(roleMemory.map(m=>m.evidence_id));
+   const handoffMemory=report.evidence.memory.filter(m=>citedEarlier.has(m.evidence_id)&&!roleIds.has(m.evidence_id));
+   const agentEvidence={...report.evidence,memory:roleMemory,handoff_memory:handoffMemory};
+   const answer=await researchAsk(env,name,role,agentEvidence,report.agents,input.scenario);
+   report.agents.push({...answer,memory_ids:roleMemory.map(m=>m.evidence_id),previous_agent_count:report.agents.length});
   }
   const probabilities=report.agents.slice(0,4).map(a=>a.probability_up).filter(Number.isFinite);
   report.probability_up=probabilities.length?probabilities.reduce((a,b)=>a+b,0)/probabilities.length:null;
@@ -132,5 +144,5 @@ export function evaluateResearch(s,now=Date.now()){
 }
 export function researchSummary(s,env){
  const r=s.research,day=researchDay(Date.now()),reports=r?.reports||[],scored=reports.filter(p=>p.outcome?.status==='evaluated');
- return{connection:connectionSummary(s,env),configured:connectionSummary(s,env).configured,provider:'OpenAI',model:env.OPENAI_RESEARCH_MODEL||'gpt-4.1-mini',enabled:r?.enabled||false,max_rounds_daily:r?.max_rounds_daily||2,usage_today:r?.usage?.[day]||{rounds:0,calls_reserved:0,tokens:0},running:!!r?.lease&&r.lease.until>Date.now(),reports:reports.slice(0,10),evaluated:scored.length,mean_brier:scored.length?scored.reduce((sum,p)=>sum+p.outcome.brier,0)/scored.length:null,orders_enabled:false,note:'Six sequential model reviews, shared evidence and persistent report memory. Agent agreement is not independent proof. AI calls are billed by the provider; the round cap bounds requests, not dollar cost. Reports never change risk limits or execute orders.'};
+ return{connection:connectionSummary(s,env),configured:connectionSummary(s,env).configured,provider:'OpenAI',model:env.OPENAI_RESEARCH_MODEL||'gpt-4.1-mini',enabled:r?.enabled||false,max_rounds_daily:r?.max_rounds_daily||2,usage_today:r?.usage?.[day]||{rounds:0,calls_reserved:0,tokens:0},running:!!r?.lease&&r.lease.until>Date.now(),reports:reports.slice(0,10),evaluated:scored.length,mean_brier:scored.length?scored.reduce((sum,p)=>sum+p.outcome.brier,0)/scored.length:null,orders_enabled:false,note:'Six sequential model reviews, shared evidence, recalled outcomes, and a recorded handoff between agents. Agent agreement is not independent proof. AI calls are billed by the provider; the round cap bounds requests, not dollar cost. Reports never change risk limits or execute orders.'};
 }

@@ -1,5 +1,6 @@
 import {initialState,accountSummary,order,marketKey,fresh} from './paper.mjs';
 import {learningWeights} from './learning.mjs';
+import {outcomeContext} from './knowledge.mjs';
 const simNames=['ATLAS','ORION','TITAN','NOVA','VEGA','LUNA'];
 function simAccount(now){const a=initialState(now);a.running=true;return a;}
 function simInit(state,now){return state.simulation ||= {enabled:true,created_at:now,adaptive:simAccount(now),baseline:simAccount(now),checks:[],cycles:0,history:[],last_test:null};}
@@ -38,7 +39,7 @@ function simRun(account,state,enabled,adaptive,now){
    const evidence=series.length>=6&&series.at(-1).at-series[Math.max(0,series.length-12)].at>=240000;
    const exposure=summary.positions.reduce((sum,p)=>sum+(p.mark??0),0),dollars=Math.max(0,Math.min(summary.cash*.06,(summary.equity||0)*.30-exposure));
    const gates=[['ATLAS',fresh(q,now),'Fresh source quote'],['ORION',evidence,'Six unique quotes across at least four minutes'],['TITAN',signal.buy&&signal.volatility<.03,signal.reason+'; volatility below 3%'],['NOVA',book<=.005&&Math.abs(signal.drift)>book+.002,'Valid book, spread ≤0.5%; signal magnitude exceeds modeled spread and round-trip fees'],['VEGA',summary.equity!==null&&dollars>=1&&account.positions.length<7,'6% cash ticket, 30% exposure, seven slots'],['LUNA',!account.halted&&!state.halted,'Independent halt and daily-loss veto']];
-   const inputs={quote_at:q.quote_at||q.fetched_at,price:q.price,bid:q.bid,ask:q.ask,samples:series.length,drift_pct:signal.drift*100,probability_up:signal.probability??null,volatility:signal.volatility??null,spread_pct:Number.isFinite(book)?book*100:null,ticket:dollars,cash:summary.cash,equity:summary.equity,exposure,positions:account.positions.length};
+   const inputs={quote_at:q.quote_at||q.fetched_at,price:q.price,bid:q.bid,ask:q.ask,samples:series.length,drift_pct:signal.drift*100,probability_up:signal.probability??null,volatility:signal.volatility??null,spread_pct:Number.isFinite(book)?book*100:null,ticket:dollars,cash:summary.cash,equity:summary.equity,exposure,positions:account.positions.length,past_outcomes:outcomeContext(state,q.symbol,now)};
    for(const [name,pass,reason]of gates)push(name,pass,reason,q.symbol,'gate',inputs);
    if(gates.every(g=>g[1])){
     const result=order(account,{intent_id:'sim-entry:'+q.symbol+':'+now,market_id:marketKey(q),side:'buy',dollars},now,true);

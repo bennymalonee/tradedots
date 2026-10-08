@@ -49,14 +49,15 @@ The dashboard, API, and optional scheduler run in the `dots` service. PostgreSQL
 
 The sidebar groups all dashboard sections into **Workspace**, **Research**, **Trading**, **Safety**, and **Settings**. It collapses on desktop and opens as a drawer on smaller screens. Memory, readiness, and performance links select their corresponding tabs; risk settings and AI connection links open the setup dialogs. Ledger export and sign-out stay at the bottom of the menu.
 
-The **Desk Evidence & Readiness** panel has four views:
+The **Desk Evidence & Readiness** panel has five views:
 
-- **Agent activity:** recorded task results, timestamps, quote and sizing inputs, citations, and recent research reviews. Waiting, vetoed, and stale activity are labeled explicitly.
+- **Agent activity:** recorded task results, timestamps, quote and sizing inputs, citations, recent research reviews, and memory/handoff counts. A forecast scorecard compares recent Brier error with a constant 50% forecast and shows calibration bins with their sample support. Waiting, vetoed, and stale activity are labeled explicitly.
 - **Memory:** search by keyword or symbol, then filter by agent and record type. Expand a result to inspect its supporting evidence and outcome. Use **Archive available history** to backfill the history still present in the desk.
 - **Readiness:** run isolated synthetic checks and save a snapshot of current configuration and evidence. Warnings identify missing prerequisites; failures identify broken checks. This does not contact AI providers or execute orders.
 - **Performance:** compare equal-capital virtual accounts after modeled fees. Realized net results remain visible when stale position marks make total equity unavailable. Both accounts need at least 30 closed trades before the report labels the comparison preliminary; that threshold does not establish statistical significance.
+- **Validation:** manually select a momentum candidate using earlier recorded bid/ask observations, freeze its settings, and test on the later period. The report compares net results with a buy-and-hold baseline and includes modeled fees, spread and adverse slippage. It requires at least 120 valid observations per symbol and does not modify the active strategy. This is one chronological holdout, not independent validation of all six agents or proof of profitability.
 
-AI research can retrieve up to three archived reviews or simulated trade lessons for the current primary symbol and cite their archive IDs. Memories remain untrusted evidence; retrieval does not change execution permissions, strategy weights, or risk limits. Trade lessons describe observed outcomes, not proven causes.
+Each AI review receives up to three role-prioritized archived reviews, simulated trade lessons or scored forecasts for the current primary symbol, and can cite their archive IDs. Earlier agents' replies are passed to later reviews, and that handoff is recorded. Simulation decision records also include recent outcome summaries for explanation. Memories remain untrusted evidence; retrieval does not change execution permissions, strategy weights, or risk limits. Trade lessons describe observed outcomes, not proven causes.
 
 No existing history can be recovered after it has already been discarded. Archive capture begins with available records after this version is installed, and continues on monitoring cycles and completed research rounds. The archive uses PostgreSQL full-text search without embedding API charges. AI calls that include retrieved context still incur normal provider charges.
 

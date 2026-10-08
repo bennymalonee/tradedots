@@ -29,7 +29,7 @@ export function memoryStore(pool) {
   },
   async stats() {
    const {rows:[row]}=await pool.query('SELECT count(*)::integer AS count,max(at) AS latest_at FROM agent_memory');
-   return{available:true,count:row.count,latest_at:row.latest_at?Number(row.latest_at):null,search:'PostgreSQL full-text and symbol matching',decision_retention_days:14};
+   return{available:true,count:row.count,latest_at:row.latest_at?Number(row.latest_at):null,search:'PostgreSQL full-text and symbol matching',search_method:'postgresql_full_text',decision_retention_days:14};
   }
  };
 }

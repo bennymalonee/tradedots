@@ -1,5 +1,6 @@
 import {simulationSummary,simulationDiagnostic} from './simulation.mjs';
 import {fresh} from './paper.mjs';
+import {learningScorecard} from './knowledge.mjs';
 const insightNames=['ATLAS','ORION','TITAN','NOVA','VEGA','LUNA'];
 const insightClip=(v,n=1200)=>String(v??'').slice(0,n);
 export function memoryDocuments(state,now=Date.now(),backfill=false) {
@@ -9,7 +10,7 @@ export function memoryDocuments(state,now=Date.now(),backfill=false) {
   title:`${a.name} ${r.mode} review · ${r.symbol||'workflow'}`,
   text:insightClip(a.summary)+' '+insightClip(a.challenge),
   evidence:{report_id:r.id,mode:r.mode,status:r.status,stance:a.stance,probability_up:a.probability_up,
-   citations:a.evidence_ids||[],quotes:r.evidence?.quotes||[],outcome:r.outcome||null}
+   citations:a.evidence_ids||[],recalled_memory_ids:a.memory_ids||[],previous_agent_count:a.previous_agent_count||0,quotes:r.evidence?.quotes||[],outcome:r.outcome||null}
  });
  for(const account of ['adaptive','baseline'])for(const f of (state.simulation?.[account]?.ledger||[]).slice(0,backfill?20000:200)) {
   docs.push({id:`fill:${account}:${f.id}`,kind:f.side==='sell'?'lesson':'fill',agent:f.side==='sell'?'LUNA':'VEGA',symbol:f.symbol,at:f.at,
@@ -55,7 +56,7 @@ export function agentTrace(state,now=Date.now()) {
  const checks=state.simulation?.checks||[];
  return insightNames.map(name=>{
   const rows=checks.filter(c=>c.agent===name).slice(-12).reverse();
-  const reviews=(state.research?.reports||[]).flatMap(r=>(r.agents||[]).filter(a=>a.name===name).map(a=>({at:r.finished_at||r.at,mode:r.mode,status:r.status,symbol:r.symbol,summary:a.summary,citations:a.evidence_ids,outcome:r.outcome||null}))).slice(0,3);
+  const reviews=(state.research?.reports||[]).flatMap(r=>(r.agents||[]).filter(a=>a.name===name).map(a=>({at:r.finished_at||r.at,mode:r.mode,status:r.status,symbol:r.symbol,summary:a.summary,citations:a.evidence_ids,outcome:r.outcome||null,recalled_memory_count:(a.memory_ids||[]).length,previous_agent_count:a.previous_agent_count||0}))).slice(0,3);
   const last=rows[0];
   const waitingReason=state.simulation?.enabled===false?'Simulation entries are paused; protective exit checks still apply':!state.markets.some(q=>q.asset_class==='stocks'&&fresh(q,now))?'Waiting for fresh eligible stock quotes':state.simulation?.adaptive?.positions?.length?'No new entry candidate; existing positions remain under monitoring':'No recorded simulation task yet. Waiting is not a failure.';
   return{name,status:!last?'waiting':now-last.at>180000?'stale':last.pass?'passed':'waiting_or_vetoed',
@@ -77,7 +78,9 @@ export function readinessReport(state,env,now=Date.now()) {
  for(const source of state.sources)add('source_'+source.key,['connected','empty'].includes(source.status)?'pass':'warning',`${source.status}${source.retry_at?' · automatic retry '+source.retry_at:''}`);
  add('desk_halt',state.halted?'warning':'pass',state.halt_reason||'No desk halt');
  add('ai_connection',(env.OPENAI_API_KEY||state.ai_connection?.ciphertext)?'pass':'warning','AI is optional; free preview works without a model');
- add('forecast_evidence',(state.learning?.evaluated||0)>=20?'pass':'warning',`${state.learning?.evaluated||0} scored forward forecasts`);
+ const learning=learningScorecard(state,now);
+ add('forecast_evidence',learning.window_samples>=100?'pass':'warning',`${learning.window_samples}/100 recent scored forecasts for a preliminary calibration report`);
+ add('chronological_validation',state.last_evaluation?.status==='completed'?'pass':'warning',state.last_evaluation?'Saved holdout report; inspect its test period and costs':'No chronological holdout evaluation recorded');
  const performance=performanceReport(state,now);
  add('performance_evidence',performance.status==='preliminary'?'pass':'warning',performance.reason);
  return{at:now,status:checks.some(c=>c.status==='fail')?'failed':checks.some(c=>c.status==='warning')?'needs_attention':'checks_passed',
