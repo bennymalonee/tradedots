@@ -10,18 +10,19 @@ DotsTrading brings market monitoring, six agent roles, experimental strategy lea
 
 **Node.js 22+ · PostgreSQL 17 · Docker Compose · MIT License**
 
-[Deploy with Coolify](#deploy-with-coolify) · [Agent lab](#agent-lab) · [Wallet research](#wallet-research-with-gmgn) · [Configuration](#configuration) · [Data migration](#data-migration) · [Troubleshooting](#troubleshooting)
+[Deploy with Coolify](#deploy-with-coolify) · [Testing setup](#testing-setup) · [Agent lab](#agent-lab) · [Wallet research](#wallet-research-with-gmgn) · [Configuration](#configuration) · [Data migration](#data-migration) · [Troubleshooting](#troubleshooting)
 
 ## What you can do
 
 | Capability | How it works |
 | --- | --- |
-| Market monitoring | Collects quotes and tracks source health, stale data, and rate limits. |
+| Market monitoring | Collects quotes and reports actual collection attempts, successes, failures, cadence, and scheduler ownership. |
 | Six agent roles | ATLAS, ORION, TITAN, NOVA, VEGA, and LUNA cover evidence, research, signals, sizing, and risk. |
-| AI research | Runs six sequential model reviews using shared evidence and recent report history. Requires an OpenAI API key. |
+| AI research | Runs six sequential model reviews using timestamped price history, modeled costs, return estimates, downside scenarios, and recent outcomes. Requires an OpenAI API key and sufficient observed market history. |
 | Wallet research | Discovers public GMGN smart-money wallets and compares a watchlist with reported PnL and recent Solana trade history. Requires a GMGN API key. |
 | Adaptive research | Scores recorded forecasts against future observations and adjusts experimental strategy weights after enough outcomes. |
-| Agent lab | Scores individual AI forecasts and tests frozen research policies with isolated paper probes and a matched baseline. |
+| Agent lab | Scores individual AI forecasts and tests frozen model and policy cohorts with isolated paper probes and a matched baseline. |
+| Testing setup | Guides AI connection, market selection, measured monitoring, history collection, and the first paper experiment. |
 | Isolated simulation | Compares adaptive and fixed-momentum virtual accounts with modeled spreads, fees, and risk limits. |
 | Paper brokerage | Supports authenticated manual proposals through the locked Alpaca Paper endpoint. |
 | Searchable memory | Archives research, forecast outcomes, trade lessons, and agent decisions in PostgreSQL with full-text and symbol search. |
@@ -50,7 +51,7 @@ The dashboard, API, and optional scheduler run in the `dots` service. PostgreSQL
 
 ## Evidence workspace
 
-The sidebar groups all dashboard sections into **Workspace**, **Research**, **Trading**, **Safety**, and **Settings**. It collapses on desktop and opens as a drawer on smaller screens. Memory, readiness, and performance links select their corresponding tabs; risk settings, AI connection, and GMGN connection links open the setup dialogs. **Research → Wallet research** opens the wallet watchlist. Ledger export and sign-out stay at the bottom of the menu.
+The sidebar groups all dashboard sections into **Workspace**, **Research**, **Trading**, **Safety**, and **Settings**. It collapses on desktop and opens as a drawer on smaller screens. Memory, readiness, and performance links select their corresponding tabs; risk settings, AI connection, and GMGN connection links open the setup dialogs. Use **Testing setup** to prepare a paper experiment, and **Research → Wallet research** for the wallet watchlist. Ledger export and sign-out stay at the bottom of the menu.
 
 The **Desk Evidence & Readiness** panel has five views:
 
@@ -64,15 +65,37 @@ Each AI review receives up to three role-prioritized archived reviews, simulated
 
 No existing history can be recovered after it has already been discarded. Archive capture begins with available records after this version is installed, and continues on monitoring cycles and completed research rounds. The archive uses PostgreSQL full-text search without embedding API charges. AI calls that include retrieved context still incur normal provider charges.
 
+## Testing setup
+
+Open **Testing setup** and complete the steps in order. The panel reports observed prerequisites; enabling a setting alone does not make a test ready.
+
+1. **Connect AI.** Add your OpenAI API key through **API Setup** or Coolify runtime configuration. The programmed workflow preview makes no AI calls. A ChatGPT subscription does not include API usage.
+2. **Choose a market.** Select a supported stock or crypto target, or use **Auto** and inspect the chosen target. It needs a fresh, uncached bid/ask book with valid source and collection timestamps and a spread of at most **0.5%**. Check provider access and market hours if quotes are stale; selecting a symbol does not create data.
+3. **Verify measured monitoring.** On your VPS, set `MONITOR_ENABLED=true` and use a **60-second** interval, then redeploy. Wait for an active scheduler owner, at least **two successful collections**, an observed interval of at most **120 seconds**, and a successful collection and scheduler heartbeat within **150 seconds**. Failure or lost ownership clears paper readiness. The hosted Sites dashboard supports manual testing while its signed-in tab stays visible and its measured browser collection is ready; it has no background scheduler.
+4. **Collect usable history.** The selected market needs at least **12 distinct source quotes** in the last **30 minutes**, spanning at least **10 minutes**, with no gap over **five minutes**. Repeated cached quotes do not increase the count. Let real collection continue until the history and current-book checks pass.
+5. **Start and test.** Start the isolated experiment in **Agent lab**, then separately select **RUN AI RESEARCH** in **Research Room**. Keep collection running through the forecast deadline so forward scores and paper exits can be observed. Starting the lab does not start paid AI calls or submit orders.
+
+**Scheduled AI requires verified VPS background monitoring**, including when no Agent lab experiment is running. A visible hosted tab cannot qualify as a background scheduler. If history or required monitoring is not ready, Dots reports the missing prerequisite before reserving an AI round or making AI provider requests. Manual AI rounds with an active paper experiment require measured browser or VPS monitoring.
+
+A completed paid round still uses **six model requests**, with a configurable **1–4 daily round cap** and at most hourly scheduled rounds. The cap resets at midnight in Europe/Stockholm. Model inputs include at most **30 timestamped history rows**; the richer context can increase input-token charges. The round cap bounds requests, not dollar cost. Set billing limits with your AI provider.
+
+Research uses actual source times and collection times. Its price return, elapsed-time trend, and sample volatility describe the observed history; irregular quotes are not treated as uniform candle bars. The evidence packet includes a break-even move calculated from the observed bid/ask and modeled fees and slippage, plus a stress budget that doubles spread, fees, and slippage assumptions. Trade volume, independent news, holidays, and halts remain unknown when no verified source supplies them. The agents are instructed to abstain rather than invent missing evidence.
+
 ## Agent lab
 
-Open **Research → Agent lab** to inspect the six AI reviewers' individual forecasts, Brier error (lower is better), forecast coverage, and calibration. Results are separated by model and policy version. **SAGE** reviews existing outcome records; **AEGIS** audits paper timing, modeled costs, and the paired benchmark. These two specialists are programmed checks and make no additional AI requests themselves.
+Open **Research → Agent lab** to inspect the six AI reviewers' individual forecasts, Brier error (lower is better), forecast coverage, and calibration. Results are separated by model and policy version. **SAGE** reviews existing outcome records; **AEGIS** audits paper timing, modeled costs, and the paired benchmark. These two specialists are programmed checks and make no additional AI requests themselves. Complete [Testing setup](#testing-setup) before starting an experiment.
 
-Start an experiment in Agent lab, then separately run an AI round in **Research Room** or enable the existing scheduled research. Starting the lab does not start paid AI calls. Each research round still uses six model requests and the existing **1–4 daily round cap**; normal provider charges apply. Only new, successfully completed AI rounds contribute. Programmed previews, failed rounds, and legacy reports are excluded.
+New experiments use **`research-shadow-v2`**. The first eligible report freezes the model, **`agent-skill-v2`**, **`research-context-v2`** prompt, and **`net-return-v1`** forecast cohort. Reports from a different model or cohort do not enter that experiment. Only new, successfully completed AI rounds contribute; programmed previews and failed rounds are excluded. Existing version 1 experiments retain their stored policy and timing instead of being relabeled as version 2.
 
 The first four reviewers' forecasts begin with equal blend weights. After each has at least **20 scored forward outcomes**, the policy uses gently adjusted Brier weights shrunk toward equal weighting, with no reviewer receiving more than **40% of the full four-role weight snapshot**. Available contributors are normalized for a round. Weights are frozen before each six-call round. This updates an experimental forecast policy; it does not retrain the underlying AI model or enable brokerage execution.
 
-Each eligible report can create an isolated **$60 paper probe**, paired with an equally sized always-long benchmark. A long probe requires a blended probability of at least **0.60**, six completed non-abstaining reviews, and no risk veto. The entry book's source timestamp must be at least **15 seconds after the AI round finishes**, and its recorded collection time must be at or after that timestamp. Entry expires if no valid book appears within **10 minutes**. After a **60-minute hold**, the first later fresh valid book supplies the exit; a missing exit leaves the probe open.
+Each eligible report can create an isolated **$60 paper probe**, paired with an equally sized always-long benchmark. Version 2 reviews estimate the gross midpoint return over the report's one-hour forecast horizon, bounded to **−25% to +25%**, and a plausible adverse scenario bounded to **−25% to 0%**. These are model estimates, not promised returns or guaranteed downside limits.
+
+A long probe requires a blended probability of at least **0.60**, six completed non-abstaining reviews, no risk veto, and an expected return strictly above the modeled break-even move plus **0.15 percentage points**. All six reviewers must provide a valid downside estimate whose loss is no greater than the frozen **3%** limit; the four forecasting reviewers also need valid return estimates. If the report does not pass the long policy, its paper policy stays flat while the matched always-long benchmark records the same opportunity.
+
+The entry book's source timestamp must be at least **15 seconds after the AI round finishes**, with a valid recorded collection time. The entry window ends **10 minutes** after that delay, or just before the report deadline if it comes first. No qualifying book means the pending entry expires. Version 2 exits use the first valid book at or after the original forecast deadline: **one hour from the report's start**, not one hour after entry. A delayed or unavailable exit leaves the probe open and visible. Legacy **`research-shadow-v1`** probes retain their stored entry-based holding period.
+
+Version 2 freezes the original reference midpoint, predicted terminal midpoint, and worst reviewer downside scenario. At the genuinely later entry book, it rechecks the remaining expected return against that book's modeled break-even move plus **0.15 percentage points**, and recalculates the worst downside relative to entry against the **3%** limit. A consumed opportunity or failed entry check leaves the paper policy flat while the benchmark still enters. Both the original forecast decision and entry audit are recorded. This entry cost check assumes the relative spread persists; actual exit costs use the later observed book.
 
 The model uses recorded bid/ask prices, **0.1% fees per side**, and **10 basis points of adverse slippage**. These are simulated trades, not verified broker fills or a portfolio equity curve: independent probes do not share a cash balance. Realized gains and losses appear after one matched pair closes. Fewer than **30 closed pairs** means insufficient evidence; 30 or more is preliminary evidence, not proof of profitability.
 
@@ -165,13 +188,13 @@ Set credentials as **runtime secrets**, not build arguments. Do not publish a da
 
 ### 5. Connect providers and enable monitoring
 
-After verifying the desk, set `MONITOR_ENABLED=true` in Coolify and redeploy. The scheduler runs sequential cycles with at least 60 seconds between completed cycles. Dashboard refreshes can also request updates; shared state prevents overlapping collection.
+After verifying the desk, set `MONITOR_ENABLED=true` and `MONITOR_INTERVAL_SECONDS=60` in Coolify and redeploy. The scheduler runs sequential cycles with at least 60 seconds between completed cycles. One app instance owns the PostgreSQL scheduler lock; waiting replicas retry, and a lost connection releases readiness until ownership and successful collection recover. Dashboard refreshes can also request updates; shared state prevents overlapping collection. **Testing setup** shows attempts, successes, failures, skips, measured cadence, owner state, heartbeat, and next due time.
 
-For AI research, add `OPENAI_API_KEY` in Coolify or use **Research Room → API Setup** after signing in. Start with the free workflow preview, then run a manual AI round once fresh quotes are available. The preview uses programmed checks; it does not call an AI model.
+For AI research, add `OPENAI_API_KEY` in Coolify or use **API Setup** after signing in. Follow [Testing setup](#testing-setup) to select a market and collect sufficient real history before the first AI round. The free workflow preview uses programmed checks and does not call an AI model.
 
 For optional wallet research, add `GMGN_API_KEY` in Coolify or use **Settings → GMGN connection**. Follow [Wallet research with GMGN](#wallet-research-with-gmgn) for key creation and call limits. This connection does not require enabling the background monitor.
 
-Scheduled paid AI research stays off until you explicitly enable it in the dashboard. The configurable daily round cap bounds requests, not a fixed dollar amount. Set provider billing limits separately.
+Scheduled paid AI research stays off until you explicitly enable it in the dashboard. All scheduled rounds require verified minute monitoring on the VPS, even without an active experiment. The configurable daily round cap bounds requests, not a fixed dollar amount. Set provider billing limits separately.
 
 ## Configuration
 
@@ -193,7 +216,7 @@ Docker Compose builds `DATABASE_URL` from the database configuration. You do not
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `MONITOR_ENABLED` | `false` | Enables the background monitor when set to `true` |
-| `MONITOR_INTERVAL_SECONDS` | `60` | Delay between cycles; values below 60 are clamped |
+| `MONITOR_INTERVAL_SECONDS` | `60` | Delay between cycles; values below 60 are clamped. Paper readiness also requires measured cadence of at most 120 seconds. |
 | `OPENAI_API_KEY` | Empty | AI research provider credential |
 | `OPENAI_RESEARCH_MODEL` | `gpt-4.1-mini` | Research model; requires access on your API account |
 | `GMGN_API_KEY` | Empty | Official GMGN public wallet research credential; never supply a private signing key |
@@ -227,7 +250,7 @@ Use a **full desk-state snapshot** when moving an existing installation. The das
 
 5. Delete the temporary snapshot. Check balances, positions, agent history, simulation records, and broker reconciliation. Reconnect credentials and explicitly resume the relevant controls before enabling the scheduler.
 
-Import preserves history and experiment metadata, pauses the destination desk, simulation, and Agent lab, disables scheduled AI research, and clears old task leases. It refuses to overwrite an existing account. Keep the source available until verification is complete, and avoid running two active schedules against the same accounts.
+Import preserves history and experiment metadata, pauses the destination desk, simulation, and Agent lab, disables scheduled AI research, and clears old task leases. It discards the source's monitoring heartbeat and ownership records; the destination must earn readiness through its own successful collections. It refuses to overwrite an existing account. Keep the source available until verification is complete, and avoid running two active schedules against the same accounts.
 
 ## Backups and maintenance
 
@@ -256,14 +279,18 @@ Before updating the app, take a backup and review the changes. Redeploy the desi
 | Database or app remains unhealthy | Check `postgres` logs and its health check. Changing the password variable alone does not change a password in an already initialized database. |
 | Import says the destination is not empty | Use a separate empty destination database. Back up existing data; the importer intentionally does not overwrite it. |
 | Quotes are missing or stale | Check source status, market hours, provider credentials, and any rate-limit retry time. |
-| AI research waits for quotes | Connect market data and wait for a fresh eligible stock or crypto quote. |
+| AI research waits for quotes | Check the selected target, source and collection times, spread, market hours, and provider access in Testing setup. |
+| AI research waits for history | Collect 12 distinct recent source quotes over at least 10 minutes. Repeated timestamps, invalid books, and cached data cannot satisfy the history gate. |
+| AI research waits for monitoring | Verify actual collection successes and cadence. Scheduled rounds require the VPS owner and current heartbeat; a hosted browser tab supports manual testing only. |
+| A paper probe stays flat | Read its forecast decision and entry audit. Version 2 needs adequate direction confidence, bounded return/downside estimates, sufficient remaining edge after actual entry-book costs, and no risk veto. |
+| A paper exit remains open | Keep measured collection running. A missing or stale book cannot supply an exit; version 2 waits for a qualifying quote after the report's original forecast deadline. |
 | A saved AI key cannot be opened | Restore the matching encryption master key or reconnect the API key through API Setup. |
 | GMGN key creation says `Insufficient balance` | GMGN applies a qualifying balance requirement to that account. Check its current plan rules; leave wallet research disconnected if you do not want to meet that requirement. |
 | GMGN is disconnected | Save an API key through GMGN connection setup, or set `GMGN_API_KEY` in Coolify and redeploy. |
 | GMGN returns `401` or `403` | Check the key, account access, and IPv4 outbound connectivity. |
 | GMGN requests are paused | Wait for the displayed cooldown or daily reset. Repeated requests do not clear the provider's limit. |
 | A saved GMGN key cannot be opened | Restore the matching `RESEARCH_ENCRYPTION_KEY` or reconnect the API key; do not generate a replacement master key as a routine fix. |
-| Background monitoring is inactive | Check `MONITOR_ENABLED=true` and redeploy. Only one scheduler instance holds the PostgreSQL lock. |
+| Background monitoring is inactive or stalled | Check `MONITOR_ENABLED=true`, the 60-second interval, app/database logs, and scheduler ownership. Configuration alone is insufficient; Testing setup needs measured successes, cadence, and a current heartbeat. Failed cycles retry without placing orders. |
 
 ## Development
 

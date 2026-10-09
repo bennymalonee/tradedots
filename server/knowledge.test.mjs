@@ -14,6 +14,6 @@ test('outcome context excludes current/future and other symbols; never mutates r
  const before=JSON.stringify(state),r=outcomeContext(state,'TEST',20);assert.equal(r.realized_net,-2);assert.deepEqual(r.trade_ids,['past']);assert.equal(r.mean_brier,.16);assert.equal(JSON.stringify(state),before);
 });
 test('historical research context does not reveal an outcome scored after its snapshot',()=>{
- const now=10000,state={markets:[{symbol:'TEST',id:'TEST',venue:'Alpaca',asset_class:'stocks',price:100,bid:99,ask:101,quote_at:new Date(now).toISOString()}],sources:[],research:{reports:[{id:'past',symbol:'TEST',mode:'ai',status:'completed',at:100,finished_at:200,agents:[{summary:'Past reasoning'}],outcome:{at:20000,status:'evaluated',return_pct:100}}]}};
+ const now=10000,state={markets:[{symbol:'TEST',id:'TEST',venue:'Alpaca',asset_class:'stocks',price:100,bid:99,ask:101,quote_at:new Date(now).toISOString(),collected_at:new Date(now).toISOString()}],sources:[],research:{reports:[{id:'past',symbol:'TEST',mode:'ai',status:'completed',model:'gpt-4.1-mini',agent_policy_version:'agent-skill-v2',prompt_version:'research-context-v2',forecast_policy_version:'net-return-v1',at:100,finished_at:200,agents:[{summary:'Past reasoning'}],outcome:{at:20000,status:'evaluated',return_pct:100}}]}};
  const evidence=researchEvidence(state,now);assert.equal(evidence.memory.length,1);assert.equal(evidence.memory[0].outcome,null);assert.equal(state.research.reports[0].outcome.at,20000);
 });

@@ -56,12 +56,12 @@ test('signed-in requests receive server identity; logout revokes session',async(
   assert.equal((await handler(new Request('https://dots.example/api/desk',{headers}))).status,401);
 });
 test('migration preserves full financial and memory state, drops secrets, pauses tasks',()=>{
-  const state=initialState();state.ledger=[{id:'test'}];state.learning={outcomes:[1]};state.ai_connection={ciphertext:'encrypted'};state.research={enabled:true,lease:{id:'old'},reports:[{status:'running'}]};state.simulation={enabled:true,adaptive:{cash_cents:95000}};state.running=true;state.tick_lease={token:'old'};
+  const state=initialState();state.ledger=[{id:'test'}];state.learning={outcomes:[1]};state.ai_connection={ciphertext:'encrypted'};state.research={enabled:true,lease:{id:'old'},reports:[{status:'running'}]};state.simulation={enabled:true,adaptive:{cash_cents:95000}};state.running=true;state.tick_lease={token:'old'};state.monitoring={scheduler:{last_success_at:Date.now(),owner:'source'}};
   state.gmgn_connection={ciphertext:'encrypted-gmgn'};state.gmgn={epoch:4,lease:{token:'old'},verified_at:123,watchlist:[{address:'public-address'}]};
   state.research_trials={enabled:true,probes:[{status:'waiting'},{status:'open'}]};
   const imported=safeTransferState({state});
   assert.equal(imported.cash_cents,state.cash_cents);assert.deepEqual(imported.ledger,state.ledger);assert.deepEqual(imported.learning,state.learning);
-  assert.equal(imported.ai_connection,undefined);assert.equal(imported.running,false);assert.equal(imported.halted,true);assert.equal(imported.research.enabled,false);assert.equal(imported.simulation.enabled,false);assert.equal(imported.tick_lease,null);
+  assert.equal(imported.ai_connection,undefined);assert.equal(imported.running,false);assert.equal(imported.halted,true);assert.equal(imported.research.enabled,false);assert.equal(imported.simulation.enabled,false);assert.equal(imported.tick_lease,null);assert.equal(imported.monitoring,undefined);
   assert.equal(imported.research_trials.enabled,false);assert.equal(imported.research_trials.probes[0].status,'cancelled');assert.equal(imported.research_trials.probes[1].status,'open');
   assert.throws(()=>safeTransferState({account:{cash:1000},ledger:[]}),/full desk_state/);
   assert.equal(imported.gmgn_connection,undefined);assert.equal(imported.gmgn.lease,null);assert.equal(imported.gmgn.epoch,5);assert.equal(imported.gmgn.verified_at,null);assert.deepEqual(imported.gmgn.watchlist,state.gmgn.watchlist);

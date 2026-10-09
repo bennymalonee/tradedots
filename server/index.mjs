@@ -4,13 +4,15 @@ import {openDatabase} from './database.mjs';
 import {validHash} from './auth.mjs';
 import {createHandler} from './http.mjs';
 import {refreshMonitoring} from '../worker/api.mjs';
+import {createMonitoringScheduler} from './scheduler.mjs';
 const development = process.env.NODE_ENV==='development';
 if (!validHash(process.env.OWNER_PASSWORD_HASH)) throw Error('Set OWNER_PASSWORD_HASH using the password-hash script');
 const originURL = new URL(process.env.APP_ORIGIN || '');
 if ((!development && originURL.protocol!=='https:') || originURL.pathname!=='/' || originURL.search || originURL.hash || originURL.username || originURL.password) throw Error('APP_ORIGIN must be the HTTPS origin assigned by Coolify');
 const origin = originURL.origin;
 const {pool,DB,MEMORY} = await openDatabase(process.env.DATABASE_URL);
-const env = {...process.env,DB,MEMORY};
+pool.on('error',()=>console.error('Database idle connection failed; details withheld to protect credentials'));
+const env = {...process.env,MONITOR_RUNTIME:'vps',DB,MEMORY};
 const handler = createHandler({pool,env,worker,origin,development});
 const server = http.createServer(async (req,res) => {
   try {
@@ -31,27 +33,11 @@ const server = http.createServer(async (req,res) => {
 server.requestTimeout=30000;server.headersTimeout=15000;
 server.listen(Number(process.env.PORT||3000),'0.0.0.0',()=>console.log('Dots VPS server ready'));
 let shuttingDown=false;
-// A persistent PostgreSQL advisory lock allows only one scheduler across replicas.
-const scheduler = await pool.connect();
-const {rows:[lock]} = await scheduler.query('SELECT pg_try_advisory_lock(734021) AS acquired');
-let timer;
-const ownsScheduler = lock.acquired && process.env.MONITOR_ENABLED==='true';
-if (ownsScheduler) {
-  const interval = Math.max(60,Number(process.env.MONITOR_INTERVAL_SECONDS)||60)*1000;
-  const cycle = async () => {
-    try {
-      await scheduler.query('SELECT 1');
-      const result = await refreshMonitoring(env);
-      if (Number(result.orders_submitted||0)!==0) throw Error('Unexpected broker execution');
-    } catch {console.error('Monitoring cycle failed; will retry next interval');}
-    if (!shuttingDown) timer=setTimeout(cycle,interval);
-  };
-  timer=setTimeout(cycle,5000);
-} else {if(lock.acquired)await scheduler.query('SELECT pg_advisory_unlock(734021)');scheduler.release();console.log('Scheduler inactive (disabled or another instance owns it)');}
+const scheduler=await createMonitoringScheduler({pool,env,refresh:refreshMonitoring,log:message=>console.error(message)});
 async function shutdown() {
-  shuttingDown=true;clearTimeout(timer);
+  if(shuttingDown)return;shuttingDown=true;
   server.close();
-  if (ownsScheduler) {await scheduler.query('SELECT pg_advisory_unlock(734021)').catch(()=>{});scheduler.release();}
+  await scheduler.stop();
   await pool.end();process.exit(0);
 }
 process.once('SIGTERM',shutdown);process.once('SIGINT',shutdown);

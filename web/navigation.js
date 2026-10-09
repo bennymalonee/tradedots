@@ -1,9 +1,9 @@
 (() => {
  const groups=[
   ['Workspace',[
-   ['overview','Overview','.desk-controls','grid'],['balance','Balance history','.balance','chart'],['events','Live events','.feed','activity'],['markets','Markets','.markets-panel','chart'],['agents','Agent desk','.chamber','users'],['activity','Agent activity','#insight-agents','activity','agents']]],
+   ['overview','Overview','.desk-controls','grid'],['testing-setup','Testing setup','#testing-readiness','check'],['balance','Balance history','.balance','chart'],['events','Live events','.feed','activity'],['markets','Markets','.markets-panel','chart'],['agents','Agent desk','.chamber','users'],['activity','Agent activity','#insight-agents','activity','agents']]],
   ['Research',[
-   ['research','Research room','#research-room','search'],['wallets','Wallet research','#wallet-research','wallet'],['agent-lab','Agent lab','#agent-lab','users'],['shadow','Shadow analysis','#shadow-review','eye'],['learning','Adaptive learning','#learning-lab','chart'],['memory','Memory','#insight-memory','archive','memory'],['readiness','Readiness','#insight-readiness','check','readiness'],['validation','Strategy validation','#insight-validation','check','validation']]],
+   ['research','Research room','#research-room','search'],['wallets','Wallet research','#wallet-research','wallet'],['agent-lab','Agent lab','#agent-lab','users'],['shadow','Shadow analysis','#shadow-review','eye'],['learning','Adaptive learning','#learning-lab','chart'],['memory','Memory','#insight-memory','archive','memory'],['readiness','System checks','#insight-readiness','check','readiness'],['validation','Strategy validation','#insight-validation','check','validation']]],
   ['Trading',[
    ['simulation','Simulation','#simulation-panel','chart'],['broker','Paper broker','#broker-panel','wallet'],['positions','Paper positions','#positions-list','layers'],['ledger','Trade ledger','#ledger-list','archive'],['performance','Simulation performance','#insight-performance','chart','performance'],['results','Account results','#performance-quality','chart'],['replay','Strategy replay','.replay-panel','history']]],
   ['Safety',[

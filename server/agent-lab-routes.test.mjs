@@ -7,14 +7,18 @@ import {createHandler} from './http.mjs';
 import {updateResearchTrials} from '../worker/research-trials.mjs';
 import {agentSkillSnapshot,updateAgentSkills} from '../worker/agent-skill.mjs';
 import {researchEvidence} from '../worker/research.mjs';
+import {recordMonitoringSuccess} from '../worker/monitoring.mjs';
 
 const labOrigin='https://dots.example';
 const labEpoch=Date.parse('2026-10-08T10:00:00Z');
 const labSession='a'.repeat(64);
 const labRoles=['ATLAS','ORION','TITAN','NOVA','VEGA','LUNA'];
-function labQuote(at,price=100){return{id:'TEST',symbol:'TEST',venue:'Alpaca',asset_class:'stocks',price,bid:price*.999,ask:price*1.001,quote_at:new Date(at).toISOString(),fetched_at:new Date(at).toISOString()};}
+function labQuote(at,price=100){return{id:'TEST',symbol:'TEST',venue:'Alpaca',asset_class:'stocks',price,bid:price*.999,ask:price*1.001,quote_at:new Date(at).toISOString(),fetched_at:new Date(at).toISOString(),collected_at:new Date(at).toISOString()};}
 function labFixture(){
- const state=initialState(labEpoch);state.markets=[labQuote(labEpoch)];state.sources=[{key:'stocks',status:'connected',markets:state.markets}];
+ const state=initialState(labEpoch);state.running=true;state.markets=[labQuote(labEpoch)];
+ state.observations=Array.from({length:12},(_,i)=>{const at=labEpoch-(11-i)*60000;return{...labQuote(at),at,market_id:'Alpaca:TEST'};});
+ recordMonitoringSuccess(state,{actor:'browser',quotes:1},labEpoch-60000);recordMonitoringSuccess(state,{actor:'browser',quotes:1},labEpoch);
+ state.sources=[{key:'stocks',status:'connected',markets:state.markets}];
  state.positions=[{market_id:'Alpaca:TEST',symbol:'TEST',asset_class:'stocks',quantity:1,cost_cents:10000,opened_at:labEpoch-60000,entry_price:100}];
  state.ledger=[{id:'existing-main-fill',at:labEpoch-60000,side:'buy',symbol:'TEST',fee:.1}];
  state.broker={status:'fixture',positions:[{symbol:'OTHER',qty:1}],orders:[]};state.broker_requests={existing:{status:'filled'}};
@@ -69,12 +73,12 @@ function labPastSkills(){
  const rows=[];
  for(let i=0;i<20;i++)for(const [roleIndex,agent]of labRoles.entries()){
   const issued=labEpoch-7200000-i*60000,finished=issued+6000,due=issued+3600000;
-  rows.push({id:`past:${i}:${agent}`,report_id:`past-${i}`,agent,model:'fixture-model',policy_version:'agent-skill-v1',symbol:'TEST',market_id:'Alpaca:TEST',issued_at:issued,finished_at:finished,due_at:due,quote_at:issued,reference_price:100,stance:'bullish',probability_up:[.9,.65,.55,.2,.7,.75][roleIndex],status:'evaluated',outcome:{at:due+1000,actual:'up'}});
+  rows.push({id:`past:${i}:${agent}`,report_id:`past-${i}`,agent,model:'fixture-model',policy_version:'agent-skill-v2',prompt_version:'research-context-v2',symbol:'TEST',market_id:'Alpaca:TEST',issued_at:issued,finished_at:finished,due_at:due,quote_at:issued,reference_price:100,stance:'bullish',probability_up:[.9,.65,.55,.2,.7,.75][roleIndex],status:'evaluated',outcome:{at:due+1000,actual:'up'}});
  }
- rows.push({id:'past-pending:ATLAS',report_id:'past-pending',agent:'ATLAS',model:'fixture-model',policy_version:'agent-skill-v1',symbol:'TEST',market_id:'Alpaca:TEST',issued_at:labEpoch-3599000,finished_at:labEpoch-3593000,due_at:labEpoch+1000,quote_at:labEpoch-3599000,reference_price:100,stance:'bullish',probability_up:.99,status:'pending',outcome:null});
+ rows.push({id:'past-pending:ATLAS',report_id:'past-pending',agent:'ATLAS',model:'fixture-model',policy_version:'agent-skill-v2',prompt_version:'research-context-v2',symbol:'TEST',market_id:'Alpaca:TEST',issued_at:labEpoch-3599000,finished_at:labEpoch-3593000,due_at:labEpoch+1000,quote_at:labEpoch-3599000,reference_price:100,stance:'bullish',probability_up:.99,status:'pending',outcome:null});
  return{version:1,records:rows,retired_before:0,last_run:null};
 }
-function labAIReply(index){return{stance:'bullish',summary:'Fixture evidence review',challenge:'Limited observed market evidence',evidence_ids:['quote:0'],probability_up:.75+index*.02,forecast_symbol:'TEST',missing:[]};}
+function labAIReply(index){return{stance:'bullish',summary:'Fixture evidence review',challenge:'Limited observed market evidence',evidence_ids:['quote:0'],probability_up:.75+index*.02,forecast_symbol:'TEST',expected_return_pct:2,downside_return_pct:-1,missing:[]};}
 
 test('completed six-call research freezes model and past skill weights, then creates delayed isolated paper pairs',async()=>{
  const f=labFixture();f.write(s=>{s.agent_skills=labPastSkills();});
@@ -84,8 +88,8 @@ test('completed six-call research freezes model and past skill weights, then cre
  globalThis.fetch=async(target,options)=>{
   assert.equal(String(target),'https://api.openai.com/v1/chat/completions');assert.equal(options.method,'POST');
   const body=JSON.parse(options.body),payload=JSON.parse(body.messages[1].content),current=f.state().research.reports.find(r=>r.id==='integrated-round');
-  assert.equal(current.status,'running');assert.equal(current.model,'fixture-model');assert.equal(current.agent_policy_version,'agent-skill-v1');
-  assert.equal(body.model,current.model);
+  assert.equal(current.status,'running');assert.equal(current.model,'fixture-model');assert.equal(current.agent_policy_version,'agent-skill-v2');
+  assert.equal(body.model,current.model);assert.equal(current.prompt_version,'research-context-v2');assert.equal(current.forecast_policy_version,'net-return-v1');
   assert.deepEqual(current.forecast_snapshot.weights,frozen.weights);assert.deepEqual(current.forecast_snapshot.scored_counts,frozen.scored_counts);
   assert.deepEqual(payload.evidence.ai_agent_skills.snapshot.weights,frozen.weights);
   assert.ok(!f.state().agent_skills.records.some(r=>r.report_id==='integrated-round'));
@@ -104,20 +108,20 @@ test('completed six-call research freezes model and past skill weights, then cre
   assert.notDeepEqual(agentSkillSnapshot(f.state(),'fixture-model',clock).scored_counts,frozen.scored_counts);
   const state=f.state(),registered=state.agent_skills.records.filter(r=>r.report_id===report.id);
   assert.equal(registered.length,6);assert.deepEqual(registered.map(r=>r.agent).sort(),[...labRoles].sort());
-  assert.ok(registered.every(r=>r.model==='fixture-model'&&r.policy_version==='agent-skill-v1'&&r.status==='pending'));
+  assert.ok(registered.every(r=>r.model==='fixture-model'&&r.policy_version==='agent-skill-v2'&&r.prompt_version==='research-context-v2'&&r.status==='pending'));
   assert.equal(state.research_trials.probes.length,1);const eligible=report.finished_at+15000;
   assert.equal(state.research_trials.probes[0].status,'waiting');
-  clock=eligible-1;f.write(s=>{s.markets=[labQuote(clock,110)];updateResearchTrials(s,clock);});
+  clock=eligible-1;f.write(s=>{s.markets=[labQuote(clock,101)];updateResearchTrials(s,clock);});
   assert.equal(f.state().research_trials.probes[0].status,'waiting');
-  clock=eligible;f.write(s=>{s.markets=[labQuote(eligible-1,110)];updateResearchTrials(s,clock);});
+  clock=eligible;f.write(s=>{s.markets=[labQuote(eligible-1,101)];updateResearchTrials(s,clock);});
   assert.equal(f.state().research_trials.probes[0].status,'waiting','old source book must not enter');
-  f.write(s=>{s.markets=[labQuote(clock,110)];updateResearchTrials(s,clock);});
+  f.write(s=>{s.markets=[labQuote(clock,101)];updateResearchTrials(s,clock);});
   const open=f.state().research_trials.probes[0];assert.equal(open.status,'open');assert.equal(open.entry.at,eligible);
-  assert.ok(open.entry.fee>0);assert.ok(open.entry.price>open.entry.ask);
+  assert.equal(open.forecast_decision.action,'long');assert.equal(open.entry_gate.action,'long');assert.ok(open.entry_gate.round_trip_cost_pct>0);assert.ok(open.entry_gate.estimated_net_edge_pct>.15);assert.ok(open.entry.fee>0);assert.ok(open.entry.price>open.entry.ask);
   clock=open.exit_due_at;f.write(s=>{s.markets=[labQuote(clock-1,120)];updateResearchTrials(s,clock);});
   assert.equal(f.state().research_trials.probes[0].status,'open','old exit book must remain unresolved');
   clock+=60000;f.write(s=>{s.markets=[labQuote(clock,120)];updateResearchTrials(s,clock);});
-  const closed=f.state().research_trials.probes[0];assert.equal(closed.status,'closed');assert.ok(closed.exit.held_seconds>3600);
+  const closed=f.state().research_trials.probes[0];assert.equal(closed.status,'closed');assert.ok(closed.exit.held_seconds>3500);assert.equal(closed.exit_due_at,report.due_at,'exit follows the frozen forecast horizon');
   assert.equal(closed.policy_net_pnl,closed.benchmark_net_pnl);assert.equal(closed.paired_net_advantage,0);
   assert.ok(closed.benchmark_net_pnl<closed.benchmark_gross_pnl);
   assert.equal(calls,6);assert.deepEqual(labFinancial(f.state()),financial);
@@ -140,8 +144,8 @@ test('failed and preview research, and missing AI credentials, cannot register f
  Date.now=()=>clock;
  try{
   const missing=labFixture();delete missing.env.OPENAI_API_KEY;
-  await labNoProvider(async()=>{await routeApi(labOwner('/api/agent-lab/control',{action:'start'}),missing.env);const r=await routeApi(labOwner('/api/research/run',{intent_id:'missing-key'}),missing.env);assert.equal((await r.json()).status,'needs_connection');});
-  assert.equal(missing.state().agent_skills,undefined);assert.equal(missing.state().research_trials.probes.length,0);
+  await labNoProvider(async()=>{assert.equal((await routeApi(labOwner('/api/agent-lab/control',{action:'start'}),missing.env)).status,400);const r=await routeApi(labOwner('/api/research/run',{intent_id:'missing-key'}),missing.env);assert.equal((await r.json()).status,'needs_connection');});
+  assert.equal(missing.state().agent_skills,undefined);assert.equal(missing.state().research_trials,undefined);
   const preview=labFixture();await labNoProvider(async()=>{await routeApi(labOwner('/api/agent-lab/control',{action:'start'}),preview.env);const r=await routeApi(labOwner('/api/research/preview',{intent_id:'preview-only'}),preview.env);assert.equal((await r.json()).status,'preview');});
   assert.equal(preview.state().agent_skills,undefined);assert.equal(preview.state().research_trials.probes.length,0);
   const failed=labFixture(),financial=labFinancial(failed.state());
@@ -173,7 +177,7 @@ test('revocation during the sixth AI request fails the final round before regist
 
 test('AI paper outcome context excludes future, same-time, different-symbol and unresolved probes',()=>{
  const s=initialState(labEpoch);s.markets=[labQuote(labEpoch)];
- s.research_trials={policy_version:'research-shadow-v1',enabled:false,probes:[
+ s.research_trials={policy_version:'research-shadow-v2',cohort:{model:'fixture-model',agent_policy_version:'agent-skill-v2',prompt_version:'research-context-v2',forecast_policy_version:'net-return-v1'},enabled:false,probes:[
   {id:'past-one',symbol:'TEST',status:'closed',closed_at:labEpoch-2000,policy_net_pnl:2,paired_net_advantage:1},
   {id:'past-two',symbol:'TEST',status:'closed',closed_at:labEpoch-1000,policy_net_pnl:-1,paired_net_advantage:-.5},
   {id:'future',symbol:'TEST',status:'closed',closed_at:labEpoch+1,policy_net_pnl:1000,paired_net_advantage:1000},
@@ -182,6 +186,8 @@ test('AI paper outcome context excludes future, same-time, different-symbol and 
   {id:'unresolved',symbol:'TEST',status:'open',closed_at:labEpoch-1000,policy_net_pnl:4000,paired_net_advantage:4000},
   {id:'invalid-result',symbol:'TEST',status:'closed',closed_at:labEpoch-1000,policy_net_pnl:null,paired_net_advantage:5000}
  ]};
+ for(const probe of s.research_trials.probes)probe.provenance={model:'fixture-model',agent_policy_version:'agent-skill-v2',prompt_version:'research-context-v2',forecast_policy_version:'net-return-v1'};
+ s.research_trials.probes.push({id:'wrong-cohort',symbol:'TEST',status:'closed',closed_at:labEpoch-1,policy_net_pnl:8000,paired_net_advantage:8000,provenance:{model:'legacy-model',agent_policy_version:'agent-skill-v1'}});
  const result=researchEvidence(s,labEpoch,'fixture-model').ai_paper_outcomes;
  assert.equal(result.symbol,'TEST');assert.equal(result.closed_pairs,2);assert.equal(result.mean_policy_net,.5);assert.equal(result.paired_net_advantage,.5);
 });

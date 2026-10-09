@@ -9,6 +9,8 @@ export function safeTransferState(input) {
   if(state.gmgn){state.gmgn.lease=null;state.gmgn.epoch=(state.gmgn.epoch||0)+1;state.gmgn.verified_at=null;}
   state.running=false;state.halted=true;state.halt_reason='Migration: verify accounts and data before resuming';
   state.tick_lease=null;
+  // Destination cadence must be measured again; source ownership is not transferable.
+  delete state.monitoring;
   if(state.research) {
     state.research.enabled=false;state.research.lease=null;
     state.research.connection_epoch=(state.research.connection_epoch||0)+1;

@@ -7,9 +7,12 @@ const ROLES=['ATLAS','ORION','TITAN','NOVA','VEGA','LUNA'];
 function fixture(){return{markets:[],cash_cents:123456,ledger:[{id:'real-ledger',fee:2}],positions:[{symbol:'OTHER'}],broker:{account:{equity:2000},orders:[{id:'broker-order'}]},research:{reports:[]},simulation:{enabled:true}};}
 function book(s,at,mid=100,extra={}){s.markets=[{venue:'Alpaca',id:'TEST',symbol:'TEST',asset_class:'stocks',price:mid,bid:mid*.999,ask:mid*1.001,quote_at:new Date(at).toISOString(),fetched_at:new Date(at).toISOString(),...extra}];}
 function report(id='report-1',at=BASE+1000,probability=.8,extra={}){return{id,at,finished_at:at+1000,mode:'ai',status:'completed',market_id:'Alpaca:TEST',symbol:'TEST',reference_price:1,probability_up:probability,agents:ROLES.map(name=>({name,stance:'bullish',summary:'fixture'})),...extra};}
-function start(s,at=BASE){researchTrialsControl(s,{action:'start',long_threshold:0,fee_pct:0},at);book(s,at);}
+// Explicit legacy fixture: old experiments retain their frozen v1 rules.
+function start(s,at=BASE){researchTrialsControl(s,{action:'start',long_threshold:0,fee_pct:0},at);s.research_trials.policy_version='research-shadow-v1';book(s,at);}
 function enter(s,r=report()){registerResearchTrial(s,r,r.finished_at);const at=r.finished_at+15000;book(s,at);updateResearchTrials(s,at);return s.research_trials.probes.at(-1);}
 function close(s,p,mid=100,extra={}){const at=p.entry.at+3600000;book(s,at,mid,extra);updateResearchTrials(s,at);return p;}
+function startV2(s,at=BASE){researchTrialsControl(s,{action:'start'},at);book(s,at);}
+function reportV2(id='v2-1',at=BASE+1000,extra={}){return report(id,at,.8,{reference_price:100,model:'test-model',agent_policy_version:'agent-skill-v2',prompt_version:'research-context-v2',forecast_policy_version:'net-return-v1',due_at:at+3600000,forecast_snapshot:{model:extra.model||'test-model',policy_version:'agent-skill-v2',prompt_version:'research-context-v2',primary_symbol:'TEST',at,scheme:'shrunk_brier_softmax_v1',weights:{ATLAS:.25,ORION:.25,TITAN:.25,NOVA:.25}},agents:ROLES.map(name=>({name,stance:'bullish',forecast_symbol:'TEST',expected_return_pct:1,downside_return_pct:-2})),return_forecast:{policy_version:'net-return-v1',expected_return_pct:1,downside_return_pct:-2},cost_summary:{round_trip_cost_pct:.6},...extra});}
 
 test('prospective registration rejects old, synthetic, failed and already-started rounds',()=>{
  const s=fixture();start(s);
@@ -98,7 +101,7 @@ test('unsupported versions and invalid settings never resume, register or silent
  s.research_trials.policy_version='research-shadow-v1';s.research_trials.settings.fee_pct=NaN;s.research_trials.enabled=true;
  assert.equal(registerResearchTrial(s,report('invalid',due),due+1000).reason,'invalid_policy_settings');updateResearchTrials(s,due);assert.equal(p.status,'open');assert.equal(researchTrialsSummary(s,due).experiment.settings,null);
  researchTrialsControl(s,{action:'pause'},due);assert.throws(()=>researchTrialsControl(s,{action:'resume'},due+1),/unsupported or invalid/);
- const empty=fixture();start(empty);empty.research_trials.policy_version='research-shadow-v0';researchTrialsControl(empty,{action:'pause'},BASE+1);researchTrialsControl(empty,{action:'start'},BASE+2);assert.equal(researchTrialsSummary(empty,BASE+2).archives[0].policy_version,'research-shadow-v0');assert.equal(empty.research_trials.policy_version,'research-shadow-v1');
+ const empty=fixture();start(empty);empty.research_trials.policy_version='research-shadow-v0';researchTrialsControl(empty,{action:'pause'},BASE+1);researchTrialsControl(empty,{action:'start'},BASE+2);assert.equal(researchTrialsSummary(empty,BASE+2).archives[0].policy_version,'research-shadow-v0');assert.equal(empty.research_trials.policy_version,'research-shadow-v2');
 });
 test('per-probe model and forecast provenance is bounded, whitelisted, immutable and excludes private report data',()=>{
  const s=fixture();start(s);const at=BASE+1000;
@@ -108,4 +111,115 @@ test('per-probe model and forecast provenance is bounded, whitelisted, immutable
  assert.deepEqual(provenance,{model:'test-model.v1',agent_policy_version:'agent-skill-v1',forecast_snapshot:{at,scheme:'shrunk_brier_softmax_v1',weights:{ATLAS:.4,ORION:.3,TITAN:.2,NOVA:.1}}});assert.ok(!JSON.stringify(s.research_trials).includes('fixture-private'));
  const bad=report('bad-provenance',at+1000,.8,{model:'unsafe model with spaces',agent_policy_version:'x'.repeat(101),forecast_snapshot:{at:at+1001,scheme:'valid',weights:{ATLAS:Infinity,ORION:.25,TITAN:.25,NOVA:.25}}});registerResearchTrial(s,bad,bad.finished_at);
  assert.deepEqual(researchTrialsSummary(s,bad.finished_at).probes[0].provenance,{model:null,agent_policy_version:null,forecast_snapshot:null});
+});
+
+test('new cost-aware experiments freeze their forecast cohort, retain mismatches as coverage and require safe return edge',()=>{
+ const s=fixture();startV2(s);const r=reportV2();const result=registerResearchTrial(s,r,r.finished_at);
+ assert.equal(result.registered,true);assert.equal(result.probe.policy_action,'long');assert.equal(s.research_trials.policy_version,'research-shadow-v2');
+ assert.deepEqual(s.research_trials.cohort,{model:'test-model',agent_policy_version:'agent-skill-v2',prompt_version:'research-context-v2',forecast_policy_version:'net-return-v1'});
+ r.model='changed';r.cost_summary.round_trip_cost_pct=0;r.return_forecast.expected_return_pct=25;
+ const shown=researchTrialsSummary(s,r.finished_at);assert.equal(shown.probes[0].expected_return_pct,1);assert.equal(shown.probes[0].round_trip_cost_pct,.6);assert.equal(shown.probes[0].estimated_net_edge_pct,.4);assert.equal(shown.probes[0].provenance.model,'test-model');assert.equal(shown.probes[0].provenance.prompt_version,'research-context-v2');
+ for(const [key,value]of [['model','other-model'],['agent_policy_version','agent-skill-v3'],['prompt_version','research-context-v3'],['forecast_policy_version','net-return-v2']]){
+  const other=reportV2('mismatch-'+key,BASE+3000,{[key]:value});const attempt=registerResearchTrial(s,other,other.finished_at);assert.equal(attempt.registered,false);assert.equal(s.research_trials.probes.at(-1).status,'skipped');assert.match(attempt.reason,/cohort/);
+ }
+ assert.equal(researchTrialsSummary(s,BASE+5000).metrics.registered,5);assert.equal(researchTrialsSummary(s,BASE+5000).metrics.skipped,4);
+});
+
+test('the cost-aware long policy rejects unsupported return pairs, insufficient net edge and excessive downside without changing its benchmark',()=>{
+ const cases=[
+  {return_forecast:{expected_return_pct:.75,downside_return_pct:-2}},
+  {return_forecast:{expected_return_pct:.74,downside_return_pct:-2}},
+  {return_forecast:{expected_return_pct:25.1,downside_return_pct:-2}},
+  {return_forecast:{expected_return_pct:1,downside_return_pct:.1}},
+  {return_forecast:{expected_return_pct:1,downside_return_pct:-3.01}},
+  {return_forecast:{expected_return_pct:1,downside_return_pct:null}},
+  {cost_summary:{round_trip_cost_pct:NaN}},
+  {agents:ROLES.map(name=>({name,stance:name==='LUNA'?'bearish':'bullish'}))},
+  {agents:ROLES.map(name=>({name,stance:'bullish',forecast_symbol:'TEST',expected_return_pct:name==='ORION'?null:1,downside_return_pct:-2}))},
+  {agents:ROLES.map(name=>({name,stance:'bullish',forecast_symbol:'TEST',expected_return_pct:1,downside_return_pct:name==='VEGA'?null:-2}))},
+  {agents:ROLES.map(name=>({name,stance:'bullish',forecast_symbol:'TEST',expected_return_pct:1,downside_return_pct:name==='LUNA'?-4:-.1}))},
+  {agents:ROLES.map(name=>({name,stance:'bullish',forecast_symbol:'TEST',expected_return_pct:1,downside_return_pct:name==='ATLAS'?-4:-.1}))}
+ ];
+ for(const extra of cases){const s=fixture();startV2(s);const r=reportV2('edge-case',BASE+1000,extra),p=enter(s,r);assert.equal(p.policy_action,'flat');assert.equal(p.status,'open');book(s,p.exit_due_at,110);updateResearchTrials(s,p.exit_due_at);assert.equal(p.status,'closed');assert.equal(p.policy_net_pnl,0);assert.ok(p.benchmark_net_pnl>0);}
+ const s=fixture();startV2(s);const r=reportV2('boundary',BASE+1000,{return_forecast:{expected_return_pct:.751,downside_return_pct:-3}});assert.equal(registerResearchTrial(s,r,r.finished_at).probe.policy_action,'long');
+});
+
+test('a version two cohort cannot be frozen from legacy, mismatched or invalid frozen weights',()=>{
+ for(const extra of [
+  {agent_policy_version:'agent-skill-v1'},
+  {forecast_snapshot:{...reportV2().forecast_snapshot,model:'wrong-model'}},
+  {forecast_snapshot:{...reportV2().forecast_snapshot,primary_symbol:'OTHER'}},
+  {forecast_snapshot:{...reportV2().forecast_snapshot,at:BASE+1001}},
+  {forecast_snapshot:{...reportV2().forecast_snapshot,weights:{ATLAS:.9,ORION:.05,TITAN:.04,NOVA:.01}}},
+  {forecast_snapshot:{...reportV2().forecast_snapshot,weights:{ATLAS:.3,ORION:.3,TITAN:.3,NOVA:.3}}},
+  {forecast_snapshot:null}
+ ]){const s=fixture();startV2(s);const r=reportV2('invalid-weights',BASE+1000,extra);const attempt=registerResearchTrial(s,r,r.finished_at);assert.equal(attempt.registered,false);assert.equal(s.research_trials.cohort,null);assert.equal(s.research_trials.probes[0].status,'skipped');assert.equal(s.research_trials.probes[0].entry,null);}
+});
+
+test('cost-aware probes exit at the original report deadline and cannot invent an entry after the forecast horizon',()=>{
+ const s=fixture();startV2(s);const r=reportV2(),p=enter(s,r);assert.equal(p.exit_due_at,r.due_at);assert.ok(p.exit_due_at<p.entry.at+3600000);assert.equal(p.forecast_due_at,r.due_at);
+ book(s,r.due_at-1,101);updateResearchTrials(s,r.due_at);assert.equal(p.status,'open');
+ book(s,r.due_at,101);updateResearchTrials(s,r.due_at);assert.equal(p.status,'closed');assert.equal(p.exit.held_seconds,(r.due_at-p.entry.at)/1000);
+ const late=fixture();startV2(late);const almost=reportV2('almost-finished',BASE+1000,{finished_at:r.due_at-16000});registerResearchTrial(late,almost,almost.finished_at);const waiting=late.research_trials.probes[0];assert.equal(waiting.entry_deadline_at,r.due_at-1);
+ book(late,r.due_at-100,100,{collected_at:new Date(r.due_at).toISOString()});updateResearchTrials(late,r.due_at);assert.equal(waiting.status,'expired');assert.equal(waiting.entry,null);
+ for(const extra of [{due_at:r.due_at+1},{due_at:null},{finished_at:r.due_at-10000}]){const bad=fixture();startV2(bad);const invalid=reportV2('invalid-due',BASE+1000,extra);registerResearchTrial(bad,invalid,invalid.finished_at);assert.equal(bad.research_trials.probes[0].status,'skipped');assert.equal(bad.research_trials.cohort,null);}
+});
+
+test('legacy experiments continue under stored direction, costs and holding settings, then restart explicitly into version two',()=>{
+ const s=fixture();start(s);const old=report('old-policy',BASE+1000,.8,{return_forecast:{expected_return_pct:-25,downside_return_pct:-25},cost_summary:{round_trip_cost_pct:25}}),p=enter(s,old);
+ assert.equal(p.policy_action,'long');assert.equal(p.exit_due_at,p.entry.at+3600000);assert.equal(s.research_trials.policy_version,'research-shadow-v1');
+ researchTrialsControl(s,{action:'pause'},p.entry.at+1);researchTrialsControl(s,{action:'resume'},p.entry.at+2);assert.equal(s.research_trials.policy_version,'research-shadow-v1');
+ book(s,p.exit_due_at,102);updateResearchTrials(s,p.exit_due_at);assert.equal(p.status,'closed');researchTrialsControl(s,{action:'pause'},p.closed_at+1);researchTrialsControl(s,{action:'start'},p.closed_at+2);
+ const shown=researchTrialsSummary(s,p.closed_at+2);assert.equal(shown.experiment.policy_version,'research-shadow-v2');assert.equal(shown.experiment.cohort,null);assert.equal(shown.archives[0].policy_version,'research-shadow-v1');assert.equal(shown.archives[0].metrics.policy_net_pnl,p.policy_net_pnl);
+});
+
+test('version two validates and snapshots its added frozen settings without provider requests or private fields',t=>{
+ t.mock.method(globalThis,'fetch',async()=>{throw Error('unexpected provider request');});const s=fixture(),before=structuredClone(s);startV2(s);
+ const settings=researchTrialsSummary(s,BASE).experiment.settings;assert.equal(settings.edge_margin_pct,.15);assert.equal(settings.max_downside_pct,3);assert.equal(settings.holding_minutes,60);
+ const r=reportV2('private',BASE+1000,{api_key:'fixture-private',cost_summary:{round_trip_cost_pct:.6,private:'fixture-private'},return_forecast:{expected_return_pct:1,downside_return_pct:-2,secret:'fixture-private'}});const p=enter(s,r);book(s,p.exit_due_at,100);updateResearchTrials(s,p.exit_due_at);
+ const {research_trials,markets,...after}=s,{markets:beforeMarkets,...otherBefore}=before;assert.deepEqual(after,otherBefore);assert.ok(!JSON.stringify(research_trials).includes('fixture-private'));assert.equal(researchTrialsSummary(s,p.closed_at).provider_calls,0);
+ for(const extra of [{edge_margin_pct:-1},{max_downside_pct:26},{holding_minutes:59}]){const bad=fixture();startV2(bad);Object.assign(bad.research_trials.settings,extra);assert.equal(researchTrialsSummary(bad,BASE).experiment.policy_supported,false);assert.equal(registerResearchTrial(bad,reportV2(),BASE+2000).reason,'invalid_policy_settings');}
+});
+
+test('entry-time audit keeps a real remaining edge and freezes its original reference and terminal midpoint',()=>{
+ const s=fixture();startV2(s);const r=reportV2(),original=structuredClone(r);registerResearchTrial(s,r,r.finished_at);const p=s.research_trials.probes[0];
+ assert.equal(p.reference_price,100);assert.equal(p.expected_terminal_mid,101);assert.equal(p.downside_terminal_mid,98);assert.equal(p.forecast_decision.action,'long');assert.equal(p.entry_gate,null);
+ r.reference_price=1;r.return_forecast.expected_return_pct=25;
+ const at=p.eligible_at;book(s,at);updateResearchTrials(s,at);assert.equal(p.status,'open');assert.equal(p.policy_action,'long');assert.equal(p.entry_gate.mid,100);
+ assert.ok(Math.abs(p.entry_gate.remaining_expected_return_pct-1)<1e-12);
+ const exactCost=(100.1*1.001*1.001/(99.9*.999*.999)-1)*100;
+ assert.ok(Math.abs(p.entry_gate.round_trip_cost_pct-exactCost)<1e-10);assert.ok(p.entry_gate.estimated_net_edge_pct>.15);assert.equal(p.entry_gate.observed_at,at);
+ const audit=researchTrialsSummary(s,at).probes[0];assert.deepEqual(audit.entry_gate,p.entry_gate);assert.equal(audit.forecast_decision.reason,p.forecast_decision.reason);assert.equal(audit.reference_price,original.reference_price);assert.equal(audit.expected_terminal_mid,101);
+});
+
+test('a price move that consumes the forecast edge makes the policy flat while the prospective benchmark still fills',()=>{
+ const s=fixture();startV2(s);const agents=ROLES.map(name=>({name,stance:'bullish',forecast_symbol:'TEST',expected_return_pct:1,downside_return_pct:-.5}));
+ const r=reportV2('consumed-edge',BASE+1000,{agents,return_forecast:{expected_return_pct:1,downside_return_pct:-.5}});registerResearchTrial(s,r,r.finished_at);const p=s.research_trials.probes[0],forecast=structuredClone(p.forecast_decision);
+ book(s,p.eligible_at,101.2);updateResearchTrials(s,p.eligible_at);assert.equal(p.status,'open');assert.equal(p.policy_action,'flat');assert.equal(p.forecast_decision.action,'long');assert.deepEqual(p.forecast_decision,forecast);
+ assert.ok(p.entry_gate.remaining_expected_return_pct<0);assert.ok(p.entry_gate.estimated_net_edge_pct<0);assert.match(p.reason,/Remaining expected return/);assert.equal(p.entry.price,101.2*1.001*1.001);
+ book(s,p.exit_due_at,102);updateResearchTrials(s,p.exit_due_at);assert.equal(p.status,'closed');assert.equal(p.policy_net_pnl,0);assert.equal(p.policy_fees,0);assert.ok(p.benchmark_net_pnl>0);assert.equal(p.paired_net_advantage,-p.benchmark_net_pnl);
+ assert.equal(researchTrialsSummary(s,p.closed_at).metrics.closed_pairs,1);
+});
+
+test('a wider valid entry spread is priced causally and can veto the original long decision without losing pair coverage',()=>{
+ const s=fixture();startV2(s);const r=reportV2('widened-spread');registerResearchTrial(s,r,r.finished_at);const p=s.research_trials.probes[0];
+ assert.equal(p.forecast_decision.action,'long');assert.equal(p.round_trip_cost_pct,.6);
+ book(s,p.eligible_at,100,{bid:99.76,ask:100.24});updateResearchTrials(s,p.eligible_at);assert.equal(p.status,'open');assert.equal(p.policy_action,'flat');
+ const exactCost=(100.24*1.001*1.001/(99.76*.999*.999)-1)*100;assert.ok(Math.abs(p.entry_gate.round_trip_cost_pct-exactCost)<1e-10);assert.ok(p.entry_gate.round_trip_cost_pct>.8);assert.ok(p.entry_gate.estimated_net_edge_pct<=.15);
+ assert.equal(p.round_trip_cost_pct,.6);assert.equal(p.forecast_decision.action,'long');assert.equal(p.entry.budget,60);
+ book(s,p.exit_due_at,100,{bid:99.76,ask:100.24});updateResearchTrials(s,p.exit_due_at);assert.equal(p.status,'closed');assert.equal(p.policy_net_pnl,0);assert.ok(p.benchmark_net_pnl<0);assert.ok(p.paired_net_advantage>0);
+});
+
+test('entry audit vetoes an entry-relative worsening of worst-role downside and unknown references while preserving the benchmark',()=>{
+ const s=fixture();startV2(s);const agents=ROLES.map(name=>({name,stance:'bullish',forecast_symbol:'TEST',expected_return_pct:2,downside_return_pct:name==='NOVA'?-3:-.5}));
+ const r=reportV2('downside-at-entry',BASE+1000,{agents,return_forecast:{expected_return_pct:2,downside_return_pct:-1}});registerResearchTrial(s,r,r.finished_at);const p=s.research_trials.probes[0];assert.equal(p.forecast_decision.action,'long');assert.equal(p.downside_terminal_mid,97);
+ book(s,p.eligible_at,100.1);updateResearchTrials(s,p.eligible_at);assert.equal(p.policy_action,'flat');assert.ok(p.entry_gate.estimated_net_edge_pct>.15);assert.ok(p.entry_gate.remaining_downside_return_pct< -3);assert.match(p.reason,/entry-relative downside/);assert.equal(p.status,'open');
+ const unknown=fixture();startV2(unknown);const missing=reportV2('unknown-reference',BASE+1000,{reference_price:null}),u=enter(unknown,missing);assert.equal(u.status,'open');assert.equal(u.policy_action,'flat');assert.equal(u.entry_gate.remaining_expected_return_pct,null);assert.equal(u.forecast_decision.action,'long');
+});
+
+test('entry-time rechecks never upgrade an original flat forecast or alter legacy version one behavior and provider calls',t=>{
+ t.mock.method(globalThis,'fetch',async()=>{throw Error('unexpected provider request');});const s=fixture(),before=structuredClone(s);startV2(s);
+ const r=reportV2('originally-flat',BASE+1000,{probability_up:.4});registerResearchTrial(s,r,r.finished_at);const p=s.research_trials.probes[0];book(s,p.eligible_at,99);updateResearchTrials(s,p.eligible_at);assert.equal(p.forecast_decision.action,'flat');assert.equal(p.policy_action,'flat');assert.ok(p.entry_gate.estimated_net_edge_pct>.15);
+ book(s,p.exit_due_at,100);updateResearchTrials(s,p.exit_due_at);const {research_trials,markets,...after}=s,{markets:beforeMarkets,...otherBefore}=before;assert.deepEqual(after,otherBefore);assert.equal(researchTrialsSummary(s,p.closed_at).orders_submitted,0);
+ const legacy=fixture();start(legacy);const old=report('legacy-entry',BASE+1000,.8);registerResearchTrial(legacy,old,old.finished_at);const v1=legacy.research_trials.probes[0];book(legacy,v1.eligible_at,200,{bid:199.52,ask:200.48});updateResearchTrials(legacy,v1.eligible_at);assert.equal(v1.policy_action,'long');assert.equal(v1.entry_gate,undefined);assert.equal(v1.forecast_decision,undefined);assert.equal(v1.exit_due_at,v1.entry.at+3600000);
 });

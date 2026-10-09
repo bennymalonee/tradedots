@@ -1,6 +1,7 @@
 import {simulationSummary,simulationDiagnostic} from './simulation.mjs';
 import {fresh} from './paper.mjs';
 import {learningScorecard} from './knowledge.mjs';
+import {testingReadiness} from './testing-readiness.mjs';
 const insightNames=['ATLAS','ORION','TITAN','NOVA','VEGA','LUNA'];
 const insightClip=(v,n=1200)=>String(v??'').slice(0,n);
 export function memoryDocuments(state,now=Date.now(),backfill=false) {
@@ -9,7 +10,7 @@ export function memoryDocuments(state,now=Date.now(),backfill=false) {
   id:`research:${r.id}:${a.name}`,kind:'research',agent:a.name,symbol:r.symbol||'',at:r.at,
   title:`${a.name} ${r.mode} review · ${r.symbol||'workflow'}`,
   text:insightClip(a.summary)+' '+insightClip(a.challenge),
-  evidence:{report_id:r.id,mode:r.mode,status:r.status,stance:a.stance,probability_up:a.probability_up,
+  evidence:{report_id:r.id,model:r.model||null,agent_policy_version:r.agent_policy_version||null,prompt_version:r.prompt_version||null,forecast_policy_version:r.forecast_policy_version||null,finished_at:r.finished_at||null,expected_return_pct:a.expected_return_pct??null,downside_return_pct:a.downside_return_pct??null,mode:r.mode,status:r.status,stance:a.stance,probability_up:a.probability_up,
    citations:a.evidence_ids||[],recalled_memory_ids:a.memory_ids||[],previous_agent_count:a.previous_agent_count||0,quotes:r.evidence?.quotes||[],outcome:r.outcome||null}
  });
  for(const account of ['adaptive','baseline'])for(const f of (state.simulation?.[account]?.ledger||[]).slice(0,backfill?20000:200)) {
@@ -78,6 +79,7 @@ export function readinessReport(state,env,now=Date.now()) {
  for(const source of state.sources)add('source_'+source.key,['connected','empty'].includes(source.status)?'pass':'warning',`${source.status}${source.retry_at?' · automatic retry '+source.retry_at:''}`);
  add('desk_halt',state.halted?'warning':'pass',state.halt_reason||'No desk halt');
  add('ai_connection',(env.OPENAI_API_KEY||state.ai_connection?.ciphertext)?'pass':'warning','AI is optional; free preview works without a model');
+ const testing=testingReadiness(state,env,now);for(const step of testing.steps)add('testing_'+step.id,step.status==='pass'?'pass':'warning',step.detail);
  const learning=learningScorecard(state,now);
  add('forecast_evidence',learning.window_samples>=100?'pass':'warning',`${learning.window_samples}/100 recent scored forecasts for a preliminary calibration report`);
  add('chronological_validation',state.last_evaluation?.status==='completed'?'pass':'warning',state.last_evaluation?'Saved holdout report; inspect its test period and costs':'No chronological holdout evaluation recorded');
